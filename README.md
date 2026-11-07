@@ -1,22 +1,16 @@
 # lean-ark-r1cs
 
-A Lean 4 / Mathlib model of [`ark-relations`](https://github.com/arkworks-rs/snark) and [`ark-r1cs-std`](https://github.com/arkworks-rs/r1cs-std) for formally verifying arkworks circuits. The model is written method by method against the Rust crates, keeping their names, and every constraint-emitting operation comes with a soundness lemma: whatever assignment satisfies the constraints a gadget emits, its output evaluates to the specified value. Soundness only; completeness is left to tests.
+A Lean 4 model of arkworks R1CS gadgets, with soundness proofs, for formally verifying arkworks circuits.
 
-## What is modelled
+## Background
 
-`ArkR1CS.Relations` covers `ark_relations::gr1cs`: `Variable` (`Zero`, `One`, `Instance i`, `Witness i`; `One` is instance variable 0 and `ConstraintSystem::new()` starts at `num_instance_variables = 1`), `LinearCombination`, and the constraint system. A gadget is a `CS F α`: given the allocation counters, its output and the list of operations it performs (`new_input_variable`, `new_witness_variable`, `enforce_r1cs_constraint`), so `do` notation threads the counters like a `ConstraintSystemRef`. `Variable::SymbolicLc` is not modelled: `new_lc` returns the linear combination itself, i.e. the form `finalize()` inlines to.
+Circuits written with [ark-r1cs-std](https://github.com/arkworks-rs/r1cs-std) on top of [ark-relations](https://github.com/arkworks-rs/snark) can't be checked by Lean directly. This package re-implements the gadgets in Lean, following the Rust method by method and keeping the Rust names, so that a circuit can be written against the model and proved sound: for every assignment that satisfies the constraints a gadget emits, its output has the value the gadget is supposed to compute. Completeness is not proved; tests cover it.
 
-`ArkR1CS.R1csStd` covers `ark_r1cs_std`: `AllocatedFp` / `FpVar` with the `impl_ops!` dispatch for `Add`, `Sub`, `Mul`, the `is_zero()` / `is_one()` shortcuts, `double`, `negate`, `square`, `inverse`, `is_neq` (two constraints; `is_eq` is its negation), `conditional_enforce_equal`, `conditional_enforce_not_equal`, and `EqGadget` with its default `enforce_equal = conditional_enforce_equal(_, TRUE)`; `Boolean` as far as those need it. `value: Option<F>` is modelled as always present (proving mode).
+A model is only as good as its fidelity to the Rust, so the package can also render a gadget's constraint matrices in the same form as `ConstraintSystem::to_matrices()`, for comparison against the real arkworks output.
 
-`ArkR1CS.CryptoPrimitives` provides the black-box `CRHSchemeGadget` interface: a native hash with a gadget assumed sound.
+## Install
 
-`ArkR1CS.Trace` renders a gadget's operations in the shape of `ConstraintSystem::to_matrices()` plus the prover's assignment, so a model can be differentially tested against the real constraint system.
-
-Two arkworks quirks the mirror makes visible: `enforce_equal` on two `Constant`s emits nothing, so `FpVar.enforce_equal_sound` requires one side to be a variable, and `is_neq` allocates its bit without a booleanity check (its soundness lemma still pins the bit to the indicator).
-
-## Using it
-
-Require it from a Lake project:
+Add the dependency to your `lakefile.toml`:
 
 ```toml
 [[require]]
@@ -25,11 +19,25 @@ git = "https://github.com/Robert-MacWha/lean-ark-r1cs"
 rev = "main"
 ```
 
-Write the gadget in `CS F` with the `FpVar` operations, keeping the same structure as the Rust, and prove its `*_sound` lemma by unfolding with `simp only [gadget, CS.run_bind, CS.run_pure, constraintsHold_append, …]` and applying the `*_sound` lemmas of the operations used. If the gadget has an arkworks counterpart, render both with `renderTrace` and `to_matrices()` and compare. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a complete example, including the differential test.
+## Usage
 
-## Building
+Write the gadget in `CS F` with the `FpVar` operations, keeping the structure of the Rust, then prove its soundness lemma from the lemmas of the operations it uses:
 
-```bash
-lake exe cache get
-lake build
+```lean
+import ArkR1CS
+open ArkR1CS
+
+def squarePlusOne [Field F] [DecidableEq F] (x : FpVar F) : CS F (FpVar F) := do
+  let sq ← x.square
+  pure (sq.add FpVar.one)
+
+theorem squarePlusOne_sound [Field F] [DecidableEq F] (x : FpVar F) (k : Counters) (a : Assignment F)
+    (h : ConstraintsHold a ((squarePlusOne x).run k).2) :
+    ((squarePlusOne x).run k).1.eval a = x.eval a * x.eval a + 1 := by
+  simp only [squarePlusOne, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
+  rw [FpVar.eval_add, FpVar.square_sound x k a h, FpVar.eval_one]
 ```
+
+`renderTrace` prints the constraint matrices and the prover's assignment of a gadget run, to be checked against the arkworks constraint system built from the same circuit. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full example.
+
+Build with `lake exe cache get` followed by `lake build`.
