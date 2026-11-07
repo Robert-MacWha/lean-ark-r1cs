@@ -13,6 +13,8 @@ use ark_relations::gr1cs::{
     ConstraintSystem, ConstraintSystemRef, OptimizationGoal, SynthesisError,
 };
 
+type Circuit = fn(ConstraintSystemRef<F17>) -> Result<(), SynthesisError>;
+
 fn f(n: u64) -> F17 {
     F17::from(n)
 }
