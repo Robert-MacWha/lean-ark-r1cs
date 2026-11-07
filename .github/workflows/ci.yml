@@ -7,22 +7,20 @@ on:
     branches: [ "main" ]
 
 jobs:
-  lean:
+  test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: leanprover/lean-action@v1
       with:
+        lake-package-directory: lean
         use-mathlib-cache: true
-
-  arkworks:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
     - uses: Swatinem/rust-cache@v2
       with:
-        workspaces: "tests/arkworks"
-    - run: cargo test --manifest-path tests/arkworks/Cargo.toml
-    - run: cargo fmt --manifest-path tests/arkworks/Cargo.toml -- --check
-    - run: cargo clippy --manifest-path tests/arkworks/Cargo.toml --all-targets -- -D warnings
+        workspaces: "crates"
+    - run: cargo test --manifest-path crates/Cargo.toml
+    - run: cargo fmt --manifest-path crates/Cargo.toml -- --check
+    - run: cargo clippy --manifest-path crates/Cargo.toml --all-targets -- -D warnings

@@ -2,13 +2,11 @@
 # Differential traces
 
 Small circuits exercising every modelled operation, rendered with
-`renderTrace` into `traces/*.trace`. `tests/arkworks` builds the same circuits
-with `ark-r1cs-std` and checks that the arkworks constraint matrices and
-assignment match these files, so any divergence between the model and the Rust
-fails either `lake build` (this file checks the committed traces) or
+`renderTrace`. `crates/tests/traces.rs` runs this file with
+`lake env lean --run Traces.lean <dir>`, builds the same circuits with
+`ark-r1cs-std`, and checks that the arkworks constraint matrices and
+assignment match, so any divergence between the model and the Rust fails
 `cargo test`.
-
-Regenerate the files with `TRACES_REGEN=1 lake env lean --run Traces.lean`.
 -/
 import ArkR1CS
 import Mathlib.Algebra.Field.ZMod
@@ -67,18 +65,14 @@ def render (c : CS F17 Unit) : String :=
 
 end Traces
 
-/-- Regenerate `traces/*.trace`. -/
-def main : IO Unit := do
+/-- Write every trace to `<dir>/<name>.trace`. -/
+def main (args : List String) : IO Unit := do
+  let some dir := args.head? | throw (IO.userError "usage: lean --run Traces.lean <dir>")
   for (name, c) in Traces.cases do
-    IO.FS.writeFile s!"traces/{name}.trace" (Traces.render c)
+    IO.FS.writeFile s!"{dir}/{name}.trace" (Traces.render c)
 
--- The committed traces must match the model (skipped while regenerating).
+-- Every case is satisfied by the prover's own assignment.
 #eval show IO Unit from do
-  if (← IO.getEnv "TRACES_REGEN").isSome then return
   for (name, c) in Traces.cases do
-    let expected ← IO.FS.readFile s!"traces/{name}.trace"
-    unless expected == Traces.render c do
-      throw (IO.userError
-        s!"traces/{name}.trace is out of date; run `TRACES_REGEN=1 lake env lean --run Traces.lean`")
     unless isSatisfied (c.run Counters.new).2 do
       throw (IO.userError s!"{name} is not satisfied by the prover's assignment")

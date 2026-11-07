@@ -124,6 +124,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-r1cs-trace"
+version = "0.1.0"
+dependencies = [
+ "ark-ff",
+ "ark-r1cs-std",
+ "ark-relations",
+ "ark-std",
+]
+
+[[package]]
 name = "ark-relations"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -171,16 +181,6 @@ checksum = "367c9c827ed431bff6868b7aa926e05b16eb46603cc8b6e768e4a5553fa1d155"
 dependencies = [
  "num-traits",
  "rand",
-]
-
-[[package]]
-name = "arkworks-traces"
-version = "0.0.0"
-dependencies = [
- "ark-ff",
- "ark-r1cs-std",
- "ark-relations",
- "ark-std",
 ]
 
 [[package]]

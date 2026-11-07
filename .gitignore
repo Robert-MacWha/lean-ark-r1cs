@@ -1,2 +1,2 @@
-/.lake
-/tests/arkworks/target
+/lean/.lake
+/crates/target

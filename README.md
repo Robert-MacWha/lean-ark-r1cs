@@ -16,7 +16,15 @@ Add the dependency to your `lakefile.toml`:
 [[require]]
 name = "ark-r1cs"
 git = "https://github.com/Robert-MacWha/lean-ark-r1cs"
+subDir = "lean"
 rev = "main"
+```
+
+For the differential test, add the Rust crate as a dev-dependency:
+
+```toml
+[dev-dependencies]
+ark-r1cs-trace = { git = "https://github.com/Robert-MacWha/lean-ark-r1cs" }
 ```
 
 ## Usage
@@ -38,6 +46,6 @@ theorem squarePlusOne_sound {F : Type} [Field F] [DecidableEq F] (x : FpVar F) (
   rw [FpVar.eval_add, FpVar.square_sound x k a h, FpVar.eval_one]
 ```
 
-`renderTrace` prints the constraint matrices and the prover's assignment of a gadget run, to be checked against the arkworks constraint system built from the same circuit. `Traces.lean` and `tests/arkworks` do this for every modelled operation: the Lean build checks the committed traces against the model, and `cargo test --manifest-path tests/arkworks/Cargo.toml` checks them against arkworks. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full circuit.
+`renderTrace` prints the constraint matrices and the prover's assignment of a gadget run. The Rust crate in `crates/` (`ark-r1cs-trace`) renders an arkworks constraint system the same way and can run a Lean file that writes the model's traces, so a test can build the same circuit with `ark-r1cs-std` and compare; its own integration test does this for every modelled operation (`cargo test --manifest-path crates/Cargo.toml`, with `lake` on the `PATH`). See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full circuit.
 
-Build with `lake exe cache get` followed by `lake build`.
+Build with `lake exe cache get` followed by `lake build` in `lean/`.
