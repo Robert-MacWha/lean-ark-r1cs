@@ -66,7 +66,7 @@ def dispatch : CS F17 Unit := do
   let x ← FpVar.new_witness 3
   let b ← EqGadget.is_eq (F := F17) x (FpVar.Constant 3)
   let c ← EqGadget.is_eq (F := F17) (FpVar.Constant 5) x
-  let _ ← EqGadget.is_eq (F := F17) (FpVar.Constant 5) (FpVar.Constant 5)
+  let _ ← EqGadget.is_eq (F := F17) (FpVar.Constant (5 : F17)) (FpVar.Constant 5)
   let _ ← EqGadget.is_neq (F := F17) x (FpVar.Constant 4)
   let s := FpVar.Constant 2 + x
   let d := FpVar.Constant 2 - x

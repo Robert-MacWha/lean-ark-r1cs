@@ -428,10 +428,10 @@ theorem square_sound (x : FpVar F) (k : Counters) (a : Assignment F)
 theorem mul_scalar_sound (x : FpVar F) (c : F) (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a ((x.mul_scalar c).run k).2) :
     ((x.mul_scalar c).run k).1.eval a = x.eval a * c := by
-  unfold mul_scalar at h ⊢
-  split_ifs with hc
-  · simp [hc]
-  · exact mul_sound x (Constant c) k a h
+  by_cases hc : c = 0
+  · simp [mul_scalar, hc]
+  · simp only [mul_scalar, hc, ↓reduceIte] at h ⊢
+    exact mul_sound x (Constant c) k a h
 
 /-- Soundness of `inverse` for a non-zero input: the output is its inverse.
 (For a `Var` input the constraint itself forces the input to be non-zero; for
