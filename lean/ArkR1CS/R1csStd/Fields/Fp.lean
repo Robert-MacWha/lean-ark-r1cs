@@ -371,6 +371,12 @@ def inverse : FpVar F → CS F (FpVar F)
     let inv ← v.inverse
     pure (Var inv)
 
+/-- `x + y`, `x - y` and `-x`, as in Rust (`&x + &y`, …). Multiplication
+emits a constraint, so it stays monadic (`x.mul y`). -/
+instance : Add (FpVar F) := ⟨add⟩
+instance : Sub (FpVar F) := ⟨sub⟩
+instance : Neg (FpVar F) := ⟨negate⟩
+
 @[simp, cs_eval] theorem eval_add (a : Assignment F) (x y : FpVar F) :
     (x.add y).eval a = x.eval a + y.eval a := by
   cases x <;> cases y <;> simp [add, add_comm]
@@ -385,6 +391,15 @@ def inverse : FpVar F → CS F (FpVar F)
 @[simp, cs_eval] theorem eval_double (a : Assignment F) (x : FpVar F) :
     x.double.eval a = x.eval a + x.eval a := by
   cases x <;> simp [double]
+
+@[simp, cs_eval] theorem eval_hAdd (a : Assignment F) (x y : FpVar F) :
+    (x + y).eval a = x.eval a + y.eval a := eval_add a x y
+
+@[simp, cs_eval] theorem eval_hSub (a : Assignment F) (x y : FpVar F) :
+    (x - y).eval a = x.eval a - y.eval a := eval_sub a x y
+
+@[simp, cs_eval] theorem eval_neg (a : Assignment F) (x : FpVar F) :
+    (-x).eval a = -x.eval a := eval_negate a x
 
 theorem mul_sound (x y : FpVar F) (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a ((x.mul y).run k).2) :
@@ -410,7 +425,17 @@ theorem square_sound (x : FpVar F) (k : Counters) (a : Assignment F)
     simp only [square, cs_run] at h ⊢
     exact AllocatedFp.square_sound v k a h
 
-/-- Soundness of `inverse` for a non-zero input: the output is its inverse. -/
+theorem mul_scalar_sound (x : FpVar F) (c : F) (k : Counters) (a : Assignment F)
+    (h : ConstraintsHold a ((x.mul_scalar c).run k).2) :
+    ((x.mul_scalar c).run k).1.eval a = x.eval a * c := by
+  by_cases hc : c = 0
+  · simp [mul_scalar, hc]
+  · simp only [mul_scalar, hc, ↓reduceIte] at h ⊢
+    exact mul_sound x (Constant c) k a h
+
+/-- Soundness of `inverse` for a non-zero input: the output is its inverse.
+(For a `Var` input the constraint itself forces the input to be non-zero; for
+a `Constant 0` arkworks returns an error, while the model returns `Constant 0`.) -/
 theorem inverse_sound (x : FpVar F) (k : Counters) (a : Assignment F) (hx : x.eval a ≠ 0)
     (h : ConstraintsHold a (x.inverse.run k).2) :
     (x.inverse.run k).1.eval a = (x.eval a)⁻¹ := by
@@ -454,30 +479,55 @@ instance : EqGadget F (FpVar F) where
   conditional_enforce_equal := conditional_enforce_equal
   conditional_enforce_not_equal := conditional_enforce_not_equal
 
+/-- The `EqGadget` default methods, so that `x.enforce_equal y` etc. work as in Rust. -/
+abbrev enforce_equal (x y : FpVar F) : CS F Unit := EqGadget.enforce_equal x y
+abbrev enforce_not_equal (x y : FpVar F) : CS F Unit := EqGadget.enforce_not_equal x y
+abbrev is_neq (x y : FpVar F) : CS F (Boolean F) := EqGadget.is_neq (F := F) x y
+
 @[simp] theorem EqGadget_enforce_equal (x y : FpVar F) :
     EqGadget.enforce_equal x y = conditional_enforce_equal x y Boolean.TRUE := rfl
+
+@[simp] theorem EqGadget_enforce_not_equal (x y : FpVar F) :
+    EqGadget.enforce_not_equal x y = conditional_enforce_not_equal x y Boolean.TRUE := rfl
+
+/-- Soundness of `conditional_enforce_equal` when `should_enforce` is one, except
+in the `(Constant, Constant)` case, where arkworks emits no constraint at all. -/
+theorem conditional_enforce_equal_sound (x y : FpVar F) (b : Boolean F)
+    (hc : ¬ (x.isConstant ∧ y.isConstant)) (k : Counters) (a : Assignment F) (hb : b.eval a = 1)
+    (h : ConstraintsHold a ((conditional_enforce_equal x y b).run k).2) :
+    x.eval a = y.eval a := by
+  cases x <;> cases y
+  · exact absurd ⟨trivial, trivial⟩ hc
+  · simpa using AllocatedFp.conditional_enforce_equal_sound _ _ _ k a hb h
+  · simpa using (AllocatedFp.conditional_enforce_equal_sound _ _ _ k a hb h).symm
+  · exact AllocatedFp.conditional_enforce_equal_sound _ _ _ k a hb h
+
+/-- Soundness of `conditional_enforce_not_equal` when `should_enforce` is one,
+except in the `(Constant, Constant)` case, where arkworks emits no constraint. -/
+theorem conditional_enforce_not_equal_sound (x y : FpVar F) (b : Boolean F)
+    (hc : ¬ (x.isConstant ∧ y.isConstant)) (k : Counters) (a : Assignment F) (hb : b.eval a = 1)
+    (h : ConstraintsHold a ((conditional_enforce_not_equal x y b).run k).2) :
+    x.eval a ≠ y.eval a := by
+  cases x <;> cases y
+  · exact absurd ⟨trivial, trivial⟩ hc
+  · simpa using AllocatedFp.conditional_enforce_not_equal_sound _ _ _ k a hb h
+  · simpa using (AllocatedFp.conditional_enforce_not_equal_sound _ _ _ k a hb h).symm
+  · exact AllocatedFp.conditional_enforce_not_equal_sound _ _ _ k a hb h
 
 /-- Soundness of `enforce_equal`, except in the `(Constant, Constant)` case,
 where arkworks emits no constraint at all. -/
 theorem enforce_equal_sound (x y : FpVar F) (hc : ¬ (x.isConstant ∧ y.isConstant))
     (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a ((EqGadget.enforce_equal x y).run k).2) :
-    x.eval a = y.eval a := by
-  rw [EqGadget_enforce_equal] at h
-  cases x with
-  | Constant c₁ =>
-    cases y with
-    | Constant c₂ => exact absurd ⟨trivial, trivial⟩ hc
-    | Var v =>
-      have := AllocatedFp.conditional_enforce_equal_sound _ _ _ k a (Boolean.eval_TRUE a) h
-      simpa using this
-  | Var v₁ =>
-    cases y with
-    | Constant c =>
-      have := AllocatedFp.conditional_enforce_equal_sound _ _ _ k a (Boolean.eval_TRUE a) h
-      simpa using this.symm
-    | Var v₂ =>
-      exact AllocatedFp.conditional_enforce_equal_sound _ _ _ k a (Boolean.eval_TRUE a) h
+    x.eval a = y.eval a :=
+  conditional_enforce_equal_sound x y _ hc k a (Boolean.eval_TRUE a) h
+
+/-- Soundness of `enforce_not_equal`, except in the `(Constant, Constant)` case. -/
+theorem enforce_not_equal_sound (x y : FpVar F) (hc : ¬ (x.isConstant ∧ y.isConstant))
+    (k : Counters) (a : Assignment F)
+    (h : ConstraintsHold a ((EqGadget.enforce_not_equal x y).run k).2) :
+    x.eval a ≠ y.eval a :=
+  conditional_enforce_not_equal_sound x y _ hc k a (Boolean.eval_TRUE a) h
 
 theorem enforce_equal_inputCount (x y : FpVar F) (k : Counters) :
     Op.inputCount ((EqGadget.enforce_equal x y).run k).2 = 0 := by
@@ -510,6 +560,14 @@ theorem is_eq_sound (x y : FpVar F) (k : Counters) (a : Assignment F)
       rw [this]
       exact if_congr eq_comm rfl rfl
     | Var v₂ => exact AllocatedFp.is_eq_sound v₁ v₂ k a h
+
+/-- Soundness of the default `is_neq` (`!is_eq`): the indicator of inequality. -/
+theorem is_neq_sound (x y : FpVar F) (k : Counters) (a : Assignment F)
+    (h : ConstraintsHold a ((EqGadget.is_neq (F := F) x y).run k).2) :
+    ((EqGadget.is_neq (F := F) x y).run k).1.eval a = if x.eval a = y.eval a then 0 else 1 := by
+  simp only [EqGadget.is_neq, cs_run] at h ⊢
+  rw [Boolean.eval_not, is_eq_sound x y k a h]
+  split_ifs <;> simp
 
 end FpVar
 
