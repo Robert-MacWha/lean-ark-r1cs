@@ -123,12 +123,25 @@ protected def pure (x : α) : CS F α := ⟨fun _ => (x, [])⟩
 
 protected def bind (c : CS F α) (f : α → CS F β) : CS F β :=
   ⟨fun k =>
-    (((f (c.run k).1).run (k.advance (c.run k).2)).1,
-      (c.run k).2 ++ ((f (c.run k).1).run (k.advance (c.run k).2)).2)⟩
+    let r := c.run k
+    let s := (f r.1).run (k.advance r.2)
+    (s.1, r.2 ++ s.2)⟩
 
 instance : Monad (CS F) where
   pure := CS.pure
   bind := CS.bind
+
+@[ext] theorem ext {c d : CS F α} (h : ∀ k, c.run k = d.run k) : c = d := by
+  cases c; cases d; congr; funext k; exact h k
+
+/-- `do`-notation, `mapM`, `forM`, … behave as expected (needed by the
+`List.mapM` / `List.forM` lemmas when a gadget loops over a list). -/
+instance : LawfulMonad (CS F) := LawfulMonad.mk'
+  (id_map := fun x => by ext k; simp only [Functor.map, CS.bind, CS.pure]; simp)
+  (pure_bind := fun x f => by ext k; simp only [Bind.bind, Pure.pure, CS.bind, CS.pure]; simp)
+  (bind_assoc := fun x f g => by
+    ext k
+    simp only [Bind.bind, CS.bind, Counters.advance_append, List.append_assoc])
 
 @[simp, cs_run] theorem run_pure (x : α) (k : Counters) : (pure x : CS F α).run k = (x, []) := rfl
 
@@ -136,6 +149,10 @@ instance : Monad (CS F) where
     (c >>= f).run k =
       (((f (c.run k).1).run (k.advance (c.run k).2)).1,
         (c.run k).2 ++ ((f (c.run k).1).run (k.advance (c.run k).2)).2) := rfl
+
+@[simp, cs_run] theorem run_map (f : α → β) (c : CS F α) (k : Counters) :
+    (f <$> c).run k = (f (c.run k).1, (c.run k).2) := by
+  simp only [Functor.map, CS.bind, CS.pure]; simp
 
 end CS
 

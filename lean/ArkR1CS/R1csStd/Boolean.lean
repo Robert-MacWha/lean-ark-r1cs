@@ -80,4 +80,10 @@ def Boolean.not [Field F] : Boolean F → Boolean F
   | .Constant b => .Constant (!b)
   | .Var v => .Var v.not
 
+theorem Boolean.eval_not [Field F] (a : Assignment F) (b : Boolean F) :
+    b.not.eval a = 1 - b.eval a := by
+  cases b with
+  | Constant b => cases b <;> simp [Boolean.not, Boolean.eval, Boolean.lc, LinearCombination.zero]
+  | Var v => simp [Boolean.not, Boolean.eval, Boolean.lc]
+
 end ArkR1CS

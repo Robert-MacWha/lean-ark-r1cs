@@ -58,7 +58,32 @@ def eq : CS F17 Unit := do
   let _ ← EqGadget.is_eq (F := F17) x y
   EqGadget.enforce_not_equal x (FpVar.Constant 4)
 
-def cases : List (String × CS F17 Unit) := [("arith", arith), ("field", field), ("eq", eq)]
+/-- The remaining dispatch branches: constant on the left of `+` / `-`,
+`Mul<F>`, constant `square` / `inverse`, `is_eq` / `is_neq` against
+constants, and the conditional `EqGadget` methods with an allocated
+`should_enforce` that is true (`b`) and false (`c`). -/
+def dispatch : CS F17 Unit := do
+  let x ← FpVar.new_witness 3
+  let b ← EqGadget.is_eq (F := F17) x (FpVar.Constant 3)
+  let c ← EqGadget.is_eq (F := F17) (FpVar.Constant 5) x
+  let _ ← EqGadget.is_eq (F := F17) (FpVar.Constant 5) (FpVar.Constant 5)
+  let _ ← EqGadget.is_neq (F := F17) x (FpVar.Constant 4)
+  let s := FpVar.Constant 2 + x
+  let d := FpVar.Constant 2 - x
+  let m ← x.mul_scalar 6
+  let m0 ← x.mul_scalar 0
+  let sc ← (FpVar.Constant 4).square
+  let ic ← (FpVar.Constant 4).inverse
+  EqGadget.conditional_enforce_equal x (FpVar.Constant 3) b
+  EqGadget.conditional_enforce_not_equal x (FpVar.Constant 4) b
+  EqGadget.conditional_enforce_equal x (FpVar.Constant 7) c
+  EqGadget.conditional_enforce_not_equal x (FpVar.Constant 3) c
+  let r := ((s + d) + (m + m0)) + (sc + ic)
+  let z ← FpVar.new_witness r.value
+  EqGadget.enforce_equal z r
+
+def cases : List (String × CS F17 Unit) :=
+  [("arith", arith), ("field", field), ("eq", eq), ("dispatch", dispatch)]
 
 def render (c : CS F17 Unit) : String :=
   renderTrace (fun x : F17 => toString x.val) (c.run Counters.new).2

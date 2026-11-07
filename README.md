@@ -37,13 +37,13 @@ open ArkR1CS
 
 def squarePlusOne {F : Type} [Field F] [DecidableEq F] (x : FpVar F) : CS F (FpVar F) := do
   let sq ← x.square
-  pure (sq.add FpVar.one)
+  pure (sq + FpVar.one)
 
 theorem squarePlusOne_sound {F : Type} [Field F] [DecidableEq F] (x : FpVar F) (k : Counters)
     (a : Assignment F) (h : ConstraintsHold a ((squarePlusOne x).run k).2) :
     ((squarePlusOne x).run k).1.eval a = x.eval a * x.eval a + 1 := by
   simp only [squarePlusOne, cs_run] at h ⊢
-  rw [FpVar.eval_add, FpVar.square_sound x k a h, FpVar.eval_one]
+  rw [FpVar.eval_hAdd, FpVar.square_sound x k a h, FpVar.eval_one]
 ```
 
 To check a gadget against arkworks, write a Lean file whose `main` renders it with `renderTrace` into a directory, run it with `lake env lean --run`, and compare in a Rust test:
