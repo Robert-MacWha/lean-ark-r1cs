@@ -2,11 +2,7 @@
 
 A Lean 4 model of arkworks R1CS gadgets, with soundness proofs, for formally verifying arkworks circuits.
 
-## Background
-
-Circuits written with [ark-r1cs-std](https://github.com/arkworks-rs/r1cs-std) on top of [ark-relations](https://github.com/arkworks-rs/snark) can't be checked by Lean directly. This package re-implements the gadgets in Lean, following the Rust method by method and keeping the Rust names, so that a circuit can be written against the model and proved sound: for every assignment that satisfies the constraints a gadget emits, its output has the value the gadget is supposed to compute. Completeness is not proved; tests cover it.
-
-A model is only as good as its fidelity to the Rust, so the package also renders a gadget's constraint matrices in the same form as `ConstraintSystem::to_matrices()`, and ships a small Rust crate that renders real arkworks constraint systems the same way, so the two can be compared.
+This package re-implements the [ark-r1cs-std](https://github.com/arkworks-rs/r1cs-std) gadgets in Lean, following the Rust method by method and keeping the Rust names. Provides basic gadgets for proving the soundness of a circuit. Does not provide completeness.
 
 ## Install
 
@@ -57,4 +53,4 @@ square_plus_one(cs.clone()).unwrap(); // the same gadget, built with ark-r1cs-st
 assert_eq!(render_trace(&cs).unwrap(), expected["square_plus_one"]);
 ```
 
-`lean/Traces.lean` and `crates/tests/traces.rs` do this for every modelled operation; `just test` builds the model, renders the traces and runs the comparison. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full circuit.
+See `lean/Traces.lean` and `crates/tests/traces.rs` for an example comparison test.
