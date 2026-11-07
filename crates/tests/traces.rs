@@ -30,7 +30,10 @@ fn arith(cs: ConstraintSystemRef<F17>) -> Result<(), SynthesisError> {
     let u = FpVar::constant(f(4)) * &d;
     let v = FpVar::constant(f(1)) * &d;
     let w = &d + FpVar::constant(f(0));
-    let r = &(&p + &t) + &(&u + &(&v + &w));
+    let l = &(FpVar::constant(f(2)) + &x) + &(FpVar::constant(f(2)) - &y);
+    let m = &x * f(6);
+    let m0 = &x * f(0);
+    let r = &(&(&p + &t) + &(&u + &(&v + &w))) + &(&l + &(&m + &m0));
     let z = FpVar::new_witness(cs, || r.value())?;
     z.enforce_equal(&r)
 }
@@ -42,7 +45,9 @@ fn field(cs: ConstraintSystemRef<F17>) -> Result<(), SynthesisError> {
     let n = x.negate()?;
     let sq = x.square()?;
     let inv = x.inverse()?;
-    let r = &(&d + &n) + &(&sq + &inv);
+    let sc = FpVar::constant(f(4)).square()?;
+    let ic = FpVar::constant(f(4)).inverse()?;
+    let r = &(&(&d + &n) + &(&sq + &inv)) + &(&sc + &ic);
     let z = FpVar::new_witness(cs, || r.value())?;
     z.enforce_equal(&r)
 }
@@ -55,41 +60,22 @@ fn eq(cs: ConstraintSystemRef<F17>) -> Result<(), SynthesisError> {
     x.enforce_equal(&FpVar::constant(f(3)))?;
     FpVar::constant(f(3)).enforce_equal(&y)?;
     let _ = x.is_eq(&y)?;
-    x.enforce_not_equal(&FpVar::constant(f(4)))
-}
-
-/// `Traces.dispatch`.
-fn dispatch(cs: ConstraintSystemRef<F17>) -> Result<(), SynthesisError> {
-    let x = FpVar::new_witness(cs.clone(), || Ok(f(3)))?;
     let b = x.is_eq(&FpVar::constant(f(3)))?;
-    let c = FpVar::constant(f(5)).is_eq(&x)?;
+    let c = FpVar::constant(f(5)).is_eq(&y)?;
     let _ = FpVar::constant(f(5)).is_eq(&FpVar::constant(f(5)))?;
     let _ = x.is_neq(&FpVar::constant(f(4)))?;
-    let s = FpVar::constant(f(2)) + &x;
-    let d = FpVar::constant(f(2)) - &x;
-    let m = &x * f(6);
-    let m0 = &x * f(0);
-    let sc = FpVar::constant(f(4)).square()?;
-    let ic = FpVar::constant(f(4)).inverse()?;
     x.conditional_enforce_equal(&FpVar::constant(f(3)), &b)?;
     x.conditional_enforce_not_equal(&FpVar::constant(f(4)), &b)?;
-    x.conditional_enforce_equal(&FpVar::constant(f(7)), &c)?;
-    x.conditional_enforce_not_equal(&FpVar::constant(f(3)), &c)?;
-    let r = &(&(&s + &d) + &(&m + &m0)) + &(&sc + &ic);
-    let z = FpVar::new_witness(cs, || r.value())?;
-    z.enforce_equal(&r)
+    y.conditional_enforce_equal(&FpVar::constant(f(7)), &c)?;
+    y.conditional_enforce_not_equal(&FpVar::constant(f(3)), &c)?;
+    x.enforce_not_equal(&FpVar::constant(f(4)))
 }
 
 #[test]
 fn traces_match_lean_model() {
     let expected = read_traces(concat!(env!("CARGO_MANIFEST_DIR"), "/target/traces"))
         .expect("traces written by `lake env lean --run Traces.lean` (see `just test`)");
-    let circuits: [(&str, Circuit); 4] = [
-        ("arith", arith),
-        ("field", field),
-        ("eq", eq),
-        ("dispatch", dispatch),
-    ];
+    let circuits: [(&str, Circuit); 3] = [("arith", arith), ("field", field), ("eq", eq)];
     assert_eq!(
         expected.len(),
         circuits.len(),
