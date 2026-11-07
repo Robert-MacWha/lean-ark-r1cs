@@ -1,23 +1,85 @@
-//! Canonical traces of arkworks constraint systems, for differential testing
-//! against the ArkR1CS Lean model.
-//!
-//! [`render_trace`] renders a constraint system in the same form as the Lean
-//! `renderTrace`, and [`lean_traces`] runs a Lean file that writes the model's
-//! traces, so a test can build the same circuit with `ark-r1cs-std` and
-//! compare the two strings.
+//! Canonical renderings of arkworks constraint systems, for differential
+//! testing against the ArkR1CS Lean model.
 
-use std::{collections::BTreeMap, fmt::Write, path::Path, process::Command};
+use std::{collections::BTreeMap, io, path::Path};
 
 use ark_ff::{Fp64, MontBackend, MontConfig, PrimeField};
-use ark_relations::gr1cs::{ConstraintSystemRef, R1CS_PREDICATE_LABEL};
+use ark_relations::gr1cs::{ConstraintSystemRef, R1CS_PREDICATE_LABEL, SynthesisError};
 
-/// The small prime field the Lean traces use (`ZMod 17`).
+/// Configuration of [`F17`].
 #[derive(MontConfig)]
 #[modulus = "17"]
 #[generator = "3"]
 pub struct F17Config;
-/// The small prime field the Lean traces use (`ZMod 17`).
+
+/// The prime field of order 17, which the Lean traces use (`ZMod 17`).
 pub type F17 = Fp64<MontBackend<F17Config, 1>>;
+
+/// Renders a constraint system in the form of the Lean `ArkR1CS.renderTrace`.
+///
+/// The output is a header with the numbers of inputs, witnesses and
+/// constraints, the instance assignment without the leading one, the witness
+/// assignment, and one `i: A | B | C` line per R1CS row with every linear
+/// combination compacted and sorted by column. The system is finalized first,
+/// so symbolic linear combinations are inlined.
+///
+/// # Errors
+///
+/// Returns an error if the system is in setup mode, since it then has no
+/// assignment.
+pub fn render_trace<F: PrimeField>(cs: &ConstraintSystemRef<F>) -> Result<String, SynthesisError> {
+    cs.finalize();
+    let matrices = cs.to_matrices()?;
+    let instance = cs.instance_assignment()?;
+    let witness = cs.witness_assignment()?;
+
+    let empty = Vec::new();
+    let (a, b, c) = match matrices.get(R1CS_PREDICATE_LABEL) {
+        Some(m) if m.len() == 3 => (&m[0], &m[1], &m[2]),
+        _ => (&empty, &empty, &empty),
+    };
+
+    let mut out = format!(
+        "inputs={} witnesses={} constraints={}\n",
+        instance.len().saturating_sub(1),
+        witness.len(),
+        a.len()
+    );
+    out.push_str(&format!(
+        "instance: {}\n",
+        render_values(instance.get(1..).unwrap_or_default())
+    ));
+    out.push_str(&format!("witness: {}\n", render_values(&witness)));
+    for (i, ((a, b), c)) in a.iter().zip(b).zip(c).enumerate() {
+        out.push_str(&format!(
+            "{i}: {} | {} | {}\n",
+            render_lc(a),
+            render_lc(b),
+            render_lc(c)
+        ));
+    }
+    Ok(out)
+}
+
+/// Reads the `<name>.trace` files in `dir`, keyed by name.
+///
+/// # Errors
+///
+/// Returns an error if the directory or one of the files cannot be read.
+pub fn read_traces(dir: impl AsRef<Path>) -> io::Result<BTreeMap<String, String>> {
+    let mut traces = BTreeMap::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|e| e == "trace") {
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            traces.insert(name, std::fs::read_to_string(&path)?);
+        }
+    }
+    Ok(traces)
+}
 
 fn render_lc<F: PrimeField>(row: &[(F, usize)]) -> String {
     let mut merged: BTreeMap<usize, F> = BTreeMap::new();
@@ -42,89 +104,4 @@ fn render_values<F: PrimeField>(values: &[F]) -> String {
         .map(|v| v.into_bigint().to_string())
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-/// Renders a constraint system like the Lean `ArkR1CS.renderTrace`: a header
-/// with the counts, the instance assignment without the leading one, the
-/// witness assignment, and one `i: A | B | C` line per R1CS row with each
-/// linear combination compacted and sorted by column.
-///
-/// The system is finalized first, so symbolic linear combinations are inlined.
-pub fn render_trace<F: PrimeField>(cs: &ConstraintSystemRef<F>) -> String {
-    cs.finalize();
-    let matrices = cs.to_matrices().expect("constraint system is finalized");
-    let r1cs = &matrices[R1CS_PREDICATE_LABEL];
-    let (a, b, c) = (&r1cs[0], &r1cs[1], &r1cs[2]);
-
-    let instance = cs.instance_assignment().expect("proving mode");
-    let witness = cs.witness_assignment().expect("proving mode");
-
-    let mut out = String::new();
-    writeln!(
-        out,
-        "inputs={} witnesses={} constraints={}",
-        instance.len() - 1,
-        witness.len(),
-        a.len()
-    )
-    .unwrap();
-    writeln!(out, "instance: {}", render_values(&instance[1..])).unwrap();
-    writeln!(out, "witness: {}", render_values(&witness)).unwrap();
-    for i in 0..a.len() {
-        writeln!(
-            out,
-            "{i}: {} | {} | {}",
-            render_lc(&a[i]),
-            render_lc(&b[i]),
-            render_lc(&c[i])
-        )
-        .unwrap();
-    }
-    out
-}
-
-/// Runs `lake env lean --run <file> <dir>` in the Lake project at `lean_dir`
-/// and returns the `<name>.trace` files it wrote, keyed by name.
-///
-/// `file` must define `main (args : List String) : IO Unit` that writes the
-/// traces into the directory given as its argument. Panics with the Lean
-/// output if the run fails, and if `lake` is not on the `PATH`.
-pub fn lean_traces(lean_dir: impl AsRef<Path>, file: &str) -> BTreeMap<String, String> {
-    let dir = tempdir();
-    let output = Command::new("lake")
-        .args(["env", "lean", "--run", file])
-        .arg(&dir)
-        .current_dir(lean_dir.as_ref())
-        .output()
-        .expect("`lake` on the PATH (install elan and build the Lean project first)");
-    assert!(
-        output.status.success(),
-        "lean --run {file} failed:\n{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let mut traces = BTreeMap::new();
-    for entry in std::fs::read_dir(&dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().is_some_and(|e| e == "trace") {
-            let name = path.file_stem().unwrap().to_string_lossy().into_owned();
-            traces.insert(name, std::fs::read_to_string(&path).unwrap());
-        }
-    }
-    std::fs::remove_dir_all(&dir).ok();
-    traces
-}
-
-fn tempdir() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "ark-r1cs-trace-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
 }

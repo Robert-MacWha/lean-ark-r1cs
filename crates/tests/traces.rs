@@ -1,6 +1,6 @@
 //! Builds the circuits of `lean/Traces.lean` with `ark-r1cs-std` and checks that
 //! the arkworks constraint matrices and assignment match the traces rendered by
-//! the Lean model.
+//! the Lean model into `target/traces` (`just test`).
 
 use ark_r1cs_std::{
     alloc::AllocVar,
@@ -8,7 +8,7 @@ use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
     prelude::GR1CSVar,
 };
-use ark_r1cs_trace::{F17, lean_traces, render_trace};
+use ark_r1cs_trace::{F17, read_traces, render_trace};
 use ark_relations::gr1cs::{
     ConstraintSystem, ConstraintSystemRef, OptimizationGoal, SynthesisError,
 };
@@ -60,10 +60,8 @@ fn eq(cs: ConstraintSystemRef<F17>) -> Result<(), SynthesisError> {
 
 #[test]
 fn traces_match_lean_model() {
-    let expected = lean_traces(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../lean"),
-        "Traces.lean",
-    );
+    let expected = read_traces(concat!(env!("CARGO_MANIFEST_DIR"), "/target/traces"))
+        .expect("traces written by `lake env lean --run Traces.lean` (see `just test`)");
     let circuits: [(&str, Circuit); 3] = [("arith", arith), ("field", field), ("eq", eq)];
     assert_eq!(
         expected.len(),
@@ -77,7 +75,7 @@ fn traces_match_lean_model() {
         circuit(cs.clone()).unwrap();
         assert!(cs.is_satisfied().unwrap(), "{name}: not satisfied");
         assert_eq!(
-            render_trace(&cs),
+            render_trace(&cs).unwrap(),
             expected[name],
             "{name}: arkworks trace differs from the Lean model"
         );

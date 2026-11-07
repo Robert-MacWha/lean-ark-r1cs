@@ -21,6 +21,6 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         workspaces: "crates"
-    - run: cargo test --manifest-path crates/Cargo.toml
-    - run: cargo fmt --manifest-path crates/Cargo.toml -- --check
-    - run: cargo clippy --manifest-path crates/Cargo.toml --all-targets -- -D warnings
+    - uses: taiki-e/install-action@just
+    - run: just test
+    - run: just check

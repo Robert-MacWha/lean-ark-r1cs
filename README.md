@@ -6,11 +6,11 @@ A Lean 4 model of arkworks R1CS gadgets, with soundness proofs, for formally ver
 
 Circuits written with [ark-r1cs-std](https://github.com/arkworks-rs/r1cs-std) on top of [ark-relations](https://github.com/arkworks-rs/snark) can't be checked by Lean directly. This package re-implements the gadgets in Lean, following the Rust method by method and keeping the Rust names, so that a circuit can be written against the model and proved sound: for every assignment that satisfies the constraints a gadget emits, its output has the value the gadget is supposed to compute. Completeness is not proved; tests cover it.
 
-A model is only as good as its fidelity to the Rust, so the package can also render a gadget's constraint matrices in the same form as `ConstraintSystem::to_matrices()`, for comparison against the real arkworks output.
+A model is only as good as its fidelity to the Rust, so the package also renders a gadget's constraint matrices in the same form as `ConstraintSystem::to_matrices()`, and ships a small Rust crate that renders real arkworks constraint systems the same way, so the two can be compared.
 
 ## Install
 
-Add the dependency to your `lakefile.toml`:
+Add the Lean package to your `lakefile.toml`:
 
 ```toml
 [[require]]
@@ -20,7 +20,7 @@ subDir = "lean"
 rev = "main"
 ```
 
-For the differential test, add the Rust crate as a dev-dependency:
+For the comparison against arkworks, add the Rust crate as a dev-dependency:
 
 ```toml
 [dev-dependencies]
@@ -46,6 +46,15 @@ theorem squarePlusOne_sound {F : Type} [Field F] [DecidableEq F] (x : FpVar F) (
   rw [FpVar.eval_add, FpVar.square_sound x k a h, FpVar.eval_one]
 ```
 
-`renderTrace` prints the constraint matrices and the prover's assignment of a gadget run. The Rust crate in `crates/` (`ark-r1cs-trace`) renders an arkworks constraint system the same way and can run a Lean file that writes the model's traces, so a test can build the same circuit with `ark-r1cs-std` and compare; its own integration test does this for every modelled operation (`cargo test --manifest-path crates/Cargo.toml`, with `lake` on the `PATH`). See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full circuit.
+To check a gadget against arkworks, write a Lean file whose `main` renders it with `renderTrace` into a directory, run it with `lake env lean --run`, and compare in a Rust test:
 
-Build with `lake exe cache get` followed by `lake build` in `lean/`.
+```rust
+use ark_r1cs_trace::{F17, read_traces, render_trace};
+
+let expected = read_traces("target/traces").unwrap();
+let cs = ConstraintSystem::<F17>::new_ref();
+square_plus_one(cs.clone()).unwrap(); // the same gadget, built with ark-r1cs-std
+assert_eq!(render_trace(&cs).unwrap(), expected["square_plus_one"]);
+```
+
+`lean/Traces.lean` and `crates/tests/traces.rs` do this for every modelled operation; `just test` builds the model, renders the traces and runs the comparison. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full circuit.
