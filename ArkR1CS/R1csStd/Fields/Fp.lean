@@ -39,12 +39,12 @@ def new (value : F) (lc : LinearCombination F) : AllocatedFp F := ⟨value, lc�
 /-- Value under an arbitrary assignment (ignores the cached `value`). -/
 def eval (a : Assignment F) (x : AllocatedFp F) : F := x.lc.eval a
 
-@[simp] theorem eval_new (a : Assignment F) (v : F) (lc : LinearCombination F) :
+@[simp, cs_eval] theorem eval_new (a : Assignment F) (v : F) (lc : LinearCombination F) :
     (new v lc).eval a = lc.eval a := rfl
 
-@[simp] theorem lc_new (v : F) (lc : LinearCombination F) : (new v lc).lc = lc := rfl
+@[simp, cs_eval] theorem lc_new (v : F) (lc : LinearCombination F) : (new v lc).lc = lc := rfl
 
-@[simp] theorem value_new (v : F) (lc : LinearCombination F) : (new v lc).value = v := rfl
+@[simp, cs_eval] theorem value_new (v : F) (lc : LinearCombination F) : (new v lc).value = v := rfl
 
 /-! ### `AllocVar` -/
 
@@ -62,14 +62,14 @@ def new_witness (v : F) : CS F (AllocatedFp F) := do
   let var ← new_witness_variable v
   pure (new v (LinearCombination.ofVar var))
 
-@[simp] theorem eval_new_constant (a : Assignment F) (c : F) : (new_constant c).eval a = c := by
+@[simp, cs_eval] theorem eval_new_constant (a : Assignment F) (c : F) : (new_constant c).eval a = c := by
   simp [new_constant]
 
-@[simp] theorem run_new_input (v : F) (k : Counters) :
+@[simp, cs_run] theorem run_new_input (v : F) (k : Counters) :
     (new_input v).run k =
       (new v (LinearCombination.ofVar (.Instance k.num_instance_variables)), [.input v]) := rfl
 
-@[simp] theorem run_new_witness (v : F) (k : Counters) :
+@[simp, cs_run] theorem run_new_witness (v : F) (k : Counters) :
     (new_witness v).run k =
       (new v (LinearCombination.ofVar (.Witness k.num_witness_variables)), [.witness v]) := rfl
 
@@ -102,36 +102,36 @@ def double (x : AllocatedFp F) : AllocatedFp F :=
 def negate (x : AllocatedFp F) : AllocatedFp F :=
   new (-x.value) (LinearCombination.diff LinearCombination.zero x.lc)
 
-@[simp] theorem eval_add (a : Assignment F) (x y : AllocatedFp F) :
+@[simp, cs_eval] theorem eval_add (a : Assignment F) (x y : AllocatedFp F) :
     (x.add y).eval a = x.eval a + y.eval a := by simp [add, eval]
 
-@[simp] theorem eval_sub (a : Assignment F) (x y : AllocatedFp F) :
+@[simp, cs_eval] theorem eval_sub (a : Assignment F) (x y : AllocatedFp F) :
     (x.sub y).eval a = x.eval a - y.eval a := by simp [sub, eval]
 
-@[simp] theorem eval_add_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
+@[simp, cs_eval] theorem eval_add_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
     (x.add_constant c).eval a = x.eval a + c := by
   unfold add_constant
   split_ifs with h
   · simp [h]
   · simp [eval]
 
-@[simp] theorem eval_sub_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
+@[simp, cs_eval] theorem eval_sub_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
     (x.sub_constant c).eval a = x.eval a - c := by
   simp [sub_constant, sub_eq_add_neg]
 
-@[simp] theorem eval_mul_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
+@[simp, cs_eval] theorem eval_mul_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
     (x.mul_constant c).eval a = x.eval a * c := by
   unfold mul_constant
   split_ifs with h
   · simp [h]
   · simp [eval]
 
-@[simp] theorem eval_double (a : Assignment F) (x : AllocatedFp F) :
+@[simp, cs_eval] theorem eval_double (a : Assignment F) (x : AllocatedFp F) :
     x.double.eval a = x.eval a + x.eval a := by
   simp [double, eval]
   ring
 
-@[simp] theorem eval_negate (a : Assignment F) (x : AllocatedFp F) :
+@[simp, cs_eval] theorem eval_negate (a : Assignment F) (x : AllocatedFp F) :
     x.negate.eval a = -x.eval a := by simp [negate, eval]
 
 /-! ### Multiplicative operations (one constraint each) -/
@@ -154,9 +154,7 @@ def inverse (x : AllocatedFp F) : CS F (AllocatedFp F) := do
 theorem mul_sound (x y : AllocatedFp F) (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a ((x.mul y).run k).2) :
     ((x.mul y).run k).1.eval a = x.eval a * y.eval a := by
-  simp only [mul, CS.run_bind, CS.run_pure, run_new_witness, run_enforce_r1cs_constraint,
-    List.singleton_append, List.append_nil, constraintsHold_witness, constraintsHold_constrain,
-    constraintsHold_nil, and_true, Constraint.holds] at h ⊢
+  simp only [mul, cs_run] at h ⊢
   simp [eval, h]
 
 theorem square_sound (x : AllocatedFp F) (k : Counters) (a : Assignment F)
@@ -167,9 +165,7 @@ theorem square_sound (x : AllocatedFp F) (k : Counters) (a : Assignment F)
 theorem inverse_sound (x : AllocatedFp F) (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a (x.inverse.run k).2) :
     x.eval a * (x.inverse.run k).1.eval a = 1 := by
-  simp only [inverse, CS.run_bind, CS.run_pure, run_new_witness, run_enforce_r1cs_constraint,
-    List.singleton_append, List.append_nil, constraintsHold_witness, constraintsHold_constrain,
-    constraintsHold_nil, and_true, Constraint.holds] at h ⊢
+  simp only [inverse, cs_run] at h ⊢
   simpa [eval] using h
 
 /-! ### Equality -/
@@ -210,14 +206,8 @@ def conditional_enforce_not_equal (x y : AllocatedFp F) (should_enforce : Boolea
 theorem is_neq_sound (x y : AllocatedFp F) (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a ((x.is_neq y).run k).2) :
     ((x.is_neq y).run k).1.eval a = if x.eval a = y.eval a then 0 else 1 := by
-  simp only [is_neq, CS.run_bind, CS.run_pure, run_new_witness_variable, run_new_lc,
-    run_enforce_r1cs_constraint, AllocatedBool.run_new_witness_without_booleanity_check,
-    List.singleton_append, List.append_nil, List.nil_append, constraintsHold_witness,
-    constraintsHold_constrain, constraintsHold_nil, and_true, Constraint.holds, Boolean.lc,
-    Boolean.not, AllocatedBool.not, LinearCombination.eval_diff, LinearCombination.eval_ofVar,
-    LinearCombination.eval_zero, Variable.eval_Witness, Variable.eval_One] at h ⊢
+  simp only [is_neq, cs_run, cs_eval, Boolean.lc, Boolean.not, AllocatedBool.not] at h ⊢
   obtain ⟨h₁, h₂⟩ := h
-  simp only [Boolean.eval, Boolean.lc, LinearCombination.eval_ofVar, Variable.eval_Witness]
   by_cases hxy : x.eval a = y.eval a
   · simp only [hxy, ↓reduceIte]
     simp only [eval] at hxy
@@ -234,14 +224,12 @@ theorem is_neq_sound (x y : AllocatedFp F) (k : Counters) (a : Assignment F)
 theorem is_eq_sound (x y : AllocatedFp F) (k : Counters) (a : Assignment F)
     (h : ConstraintsHold a ((x.is_eq y).run k).2) :
     ((x.is_eq y).run k).1.eval a = if x.eval a = y.eval a then 1 else 0 := by
-  simp only [is_eq, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
+  simp only [is_eq, cs_run] at h ⊢
   have := is_neq_sound x y k a h
   have hr : ((x.is_neq y).run k).1 = Boolean.Var ⟨decide (x.value ≠ y.value),
       LinearCombination.ofVar (.Witness k.num_witness_variables)⟩ := rfl
   rw [hr] at this ⊢
-  simp only [Boolean.eval, Boolean.lc, Boolean.not, AllocatedBool.not,
-    LinearCombination.eval_diff, LinearCombination.eval_ofVar, Variable.eval_One,
-    Variable.eval_Witness] at this ⊢
+  simp only [cs_eval, Boolean.lc, Boolean.not, AllocatedBool.not] at this ⊢
   rw [this]
   split_ifs <;> simp
 
@@ -249,9 +237,7 @@ theorem conditional_enforce_equal_sound (x y : AllocatedFp F) (b : Boolean F) (k
     (a : Assignment F) (hb : b.eval a = 1)
     (h : ConstraintsHold a ((x.conditional_enforce_equal y b).run k).2) :
     x.eval a = y.eval a := by
-  simp only [conditional_enforce_equal, run_enforce_r1cs_constraint, constraintsHold_constrain,
-    constraintsHold_nil, and_true, Constraint.holds, LinearCombination.eval_diff,
-    LinearCombination.eval_zero] at h
+  simp only [conditional_enforce_equal, cs_run, cs_eval] at h
   rw [Boolean.eval] at hb
   rw [hb, mul_one] at h
   exact sub_eq_zero.mp h
@@ -260,10 +246,7 @@ theorem conditional_enforce_not_equal_sound (x y : AllocatedFp F) (b : Boolean F
     (a : Assignment F) (hb : b.eval a = 1)
     (h : ConstraintsHold a ((x.conditional_enforce_not_equal y b).run k).2) :
     x.eval a ≠ y.eval a := by
-  simp only [conditional_enforce_not_equal, CS.run_bind, run_new_witness,
-    run_enforce_r1cs_constraint, List.singleton_append, constraintsHold_witness,
-    constraintsHold_constrain, constraintsHold_nil, and_true, Constraint.holds,
-    LinearCombination.eval_diff] at h
+  simp only [conditional_enforce_not_equal, cs_run, cs_eval] at h
   rw [Boolean.eval] at hb
   rw [hb] at h
   intro hxy
@@ -298,12 +281,12 @@ def isConstant : FpVar F → Prop
   | Constant _ => True
   | Var _ => False
 
-@[simp] theorem eval_Constant (a : Assignment F) (c : F) : eval a (Constant c) = c := rfl
-@[simp] theorem eval_Var (a : Assignment F) (v : AllocatedFp F) : eval a (Var v) = v.eval a := rfl
+@[simp, cs_eval] theorem eval_Constant (a : Assignment F) (c : F) : eval a (Constant c) = c := rfl
+@[simp, cs_eval] theorem eval_Var (a : Assignment F) (v : AllocatedFp F) : eval a (Var v) = v.eval a := rfl
 omit [Field F] [DecidableEq F] in
-@[simp] theorem value_Constant (c : F) : value (Constant c : FpVar F) = c := rfl
+@[simp, cs_eval] theorem value_Constant (c : F) : value (Constant c : FpVar F) = c := rfl
 omit [Field F] [DecidableEq F] in
-@[simp] theorem value_Var (v : AllocatedFp F) : value (Var v) = v.value := rfl
+@[simp, cs_eval] theorem value_Var (v : AllocatedFp F) : value (Var v) = v.value := rfl
 
 /-! ### Constants and allocation -/
 
@@ -324,18 +307,18 @@ def new_witness (v : F) : CS F (FpVar F) := do
   let x ← AllocatedFp.new_witness v
   pure (Var x)
 
-@[simp] theorem run_new_input (v : F) (k : Counters) :
+@[simp, cs_run] theorem run_new_input (v : F) (k : Counters) :
     (new_input v).run k =
       (Var (AllocatedFp.new v (LinearCombination.ofVar (.Instance k.num_instance_variables))),
         [.input v]) := rfl
 
-@[simp] theorem run_new_witness (v : F) (k : Counters) :
+@[simp, cs_run] theorem run_new_witness (v : F) (k : Counters) :
     (new_witness v).run k =
       (Var (AllocatedFp.new v (LinearCombination.ofVar (.Witness k.num_witness_variables))),
         [.witness v]) := rfl
 
-@[simp] theorem eval_zero (a : Assignment F) : eval a (zero : FpVar F) = 0 := rfl
-@[simp] theorem eval_one (a : Assignment F) : eval a (one : FpVar F) = 1 := rfl
+@[simp, cs_eval] theorem eval_zero (a : Assignment F) : eval a (zero : FpVar F) = 0 := rfl
+@[simp, cs_eval] theorem eval_one (a : Assignment F) : eval a (one : FpVar F) = 1 := rfl
 
 /-! ### `impl_ops!` dispatch -/
 
@@ -388,18 +371,18 @@ def inverse : FpVar F → CS F (FpVar F)
     let inv ← v.inverse
     pure (Var inv)
 
-@[simp] theorem eval_add (a : Assignment F) (x y : FpVar F) :
+@[simp, cs_eval] theorem eval_add (a : Assignment F) (x y : FpVar F) :
     (x.add y).eval a = x.eval a + y.eval a := by
   cases x <;> cases y <;> simp [add, add_comm]
 
-@[simp] theorem eval_sub (a : Assignment F) (x y : FpVar F) :
+@[simp, cs_eval] theorem eval_sub (a : Assignment F) (x y : FpVar F) :
     (x.sub y).eval a = x.eval a - y.eval a := by
   cases x <;> cases y <;> simp [sub]
 
-@[simp] theorem eval_negate (a : Assignment F) (x : FpVar F) : x.negate.eval a = -x.eval a := by
+@[simp, cs_eval] theorem eval_negate (a : Assignment F) (x : FpVar F) : x.negate.eval a = -x.eval a := by
   cases x <;> simp [negate]
 
-@[simp] theorem eval_double (a : Assignment F) (x : FpVar F) :
+@[simp, cs_eval] theorem eval_double (a : Assignment F) (x : FpVar F) :
     x.double.eval a = x.eval a + x.eval a := by
   cases x <;> simp [double]
 
@@ -415,7 +398,7 @@ theorem mul_sound (x y : FpVar F) (k : Counters) (a : Assignment F)
     cases y with
     | Constant c => simp [mul]
     | Var v₂ =>
-      simp only [mul, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
+      simp only [mul, cs_run] at h ⊢
       exact AllocatedFp.mul_sound v₁ v₂ k a h
 
 theorem square_sound (x : FpVar F) (k : Counters) (a : Assignment F)
@@ -424,7 +407,7 @@ theorem square_sound (x : FpVar F) (k : Counters) (a : Assignment F)
   cases x with
   | Constant c => simp [square]
   | Var v =>
-    simp only [square, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
+    simp only [square, cs_run] at h ⊢
     exact AllocatedFp.square_sound v k a h
 
 /-- Soundness of `inverse` for a non-zero input: the output is its inverse. -/
@@ -434,7 +417,7 @@ theorem inverse_sound (x : FpVar F) (k : Counters) (a : Assignment F) (hx : x.ev
   cases x with
   | Constant c => simp [inverse]
   | Var v =>
-    simp only [inverse, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
+    simp only [inverse, cs_run] at h ⊢
     have := AllocatedFp.inverse_sound v k a h
     simp only [eval_Var] at hx
     exact eq_inv_of_mul_eq_one_right this
@@ -510,7 +493,7 @@ theorem is_eq_sound (x y : FpVar F) (k : Counters) (a : Assignment F)
   | Constant c₁ =>
     cases y with
     | Constant c₂ =>
-      simp only [is_eq, CS.run_pure, eval_Constant, Boolean.eval, Boolean.lc]
+      simp only [is_eq, cs_run, cs_eval, Boolean.lc]
       by_cases hc : c₁ = c₂ <;> simp [hc, LinearCombination.zero]
     | Var v =>
       have := AllocatedFp.is_eq_sound (AllocatedFp.new_constant c₁) v k a h

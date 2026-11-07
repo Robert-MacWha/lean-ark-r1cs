@@ -42,11 +42,11 @@ def lc [Field F] : Boolean F → LinearCombination F
 /-- Value of the boolean's linear combination. -/
 def eval [Field F] (a : Assignment F) (b : Boolean F) : F := b.lc.eval a
 
-@[simp] theorem eval_TRUE [Field F] (a : Assignment F) : eval a (TRUE : Boolean F) = 1 := by
+@[simp, cs_eval] theorem eval_TRUE [Field F] (a : Assignment F) : eval a (TRUE : Boolean F) = 1 := by
   simp [eval, TRUE, lc]
-@[simp] theorem eval_FALSE [Field F] (a : Assignment F) : eval a (FALSE : Boolean F) = 0 := by
+@[simp, cs_eval] theorem eval_FALSE [Field F] (a : Assignment F) : eval a (FALSE : Boolean F) = 0 := by
   simp [eval, FALSE, lc]
-@[simp] theorem eval_Var [Field F] (a : Assignment F) (v : AllocatedBool F) :
+@[simp, cs_eval] theorem eval_Var [Field F] (a : Assignment F) (v : AllocatedBool F) :
     eval a (Var v) = v.lc.eval a := rfl
 
 end Boolean
@@ -57,7 +57,7 @@ namespace AllocatedBool
 def not [Field F] (v : AllocatedBool F) : AllocatedBool F :=
   ⟨!v.value, LinearCombination.diff (LinearCombination.ofVar .One) v.lc⟩
 
-@[simp] theorem eval_not [Field F] (a : Assignment F) (v : AllocatedBool F) :
+@[simp, cs_eval] theorem eval_not [Field F] (a : Assignment F) (v : AllocatedBool F) :
     v.not.lc.eval a = 1 - v.lc.eval a := by
   simp [not]
 
@@ -66,12 +66,14 @@ def new_witness_without_booleanity_check [Field F] (b : Bool) : CS F (AllocatedB
   let v ← new_witness_variable (if b then (1 : F) else 0)
   pure ⟨b, LinearCombination.ofVar v⟩
 
-@[simp] theorem run_new_witness_without_booleanity_check [Field F] (b : Bool) (k : Counters) :
+@[simp, cs_run] theorem run_new_witness_without_booleanity_check [Field F] (b : Bool) (k : Counters) :
     (new_witness_without_booleanity_check b).run k =
       (⟨b, LinearCombination.ofVar (.Witness k.num_witness_variables)⟩,
         [.witness (if b then (1 : F) else 0)]) := rfl
 
 end AllocatedBool
+
+attribute [cs_eval] Boolean.eval
 
 /-- `impl Not for Boolean`. -/
 def Boolean.not [Field F] : Boolean F → Boolean F

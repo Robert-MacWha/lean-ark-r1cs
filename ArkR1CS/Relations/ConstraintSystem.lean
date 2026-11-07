@@ -95,17 +95,17 @@ def Counters.new : Counters := ⟨1, 0⟩
 def Counters.advance (c : Counters) (ops : List (Op F)) : Counters :=
   ⟨c.num_instance_variables + Op.inputCount ops, c.num_witness_variables + Op.witnessCount ops⟩
 
-@[simp] theorem Counters.advance_nil (c : Counters) : c.advance ([] : List (Op F)) = c := by
+@[simp, cs_run] theorem Counters.advance_nil (c : Counters) : c.advance ([] : List (Op F)) = c := by
   simp [Counters.advance, Op.inputCount, Op.witnessCount]
 
 theorem Counters.advance_append (c : Counters) (l₁ l₂ : List (Op F)) :
     c.advance (l₁ ++ l₂) = (c.advance l₁).advance l₂ := by
   simp [Counters.advance, Op.inputCount_append, Op.witnessCount_append, Nat.add_assoc]
 
-@[simp] theorem Counters.advance_num_instance_variables (c : Counters) (ops : List (Op F)) :
+@[simp, cs_run] theorem Counters.advance_num_instance_variables (c : Counters) (ops : List (Op F)) :
     (c.advance ops).num_instance_variables = c.num_instance_variables + Op.inputCount ops := rfl
 
-@[simp] theorem Counters.advance_num_witness_variables (c : Counters) (ops : List (Op F)) :
+@[simp, cs_run] theorem Counters.advance_num_witness_variables (c : Counters) (ops : List (Op F)) :
     (c.advance ops).num_witness_variables = c.num_witness_variables + Op.witnessCount ops := rfl
 
 /-! ### Gadgets as computations on the constraint system -/
@@ -130,9 +130,9 @@ instance : Monad (CS F) where
   pure := CS.pure
   bind := CS.bind
 
-@[simp] theorem run_pure (x : α) (k : Counters) : (pure x : CS F α).run k = (x, []) := rfl
+@[simp, cs_run] theorem run_pure (x : α) (k : Counters) : (pure x : CS F α).run k = (x, []) := rfl
 
-@[simp] theorem run_bind (c : CS F α) (f : α → CS F β) (k : Counters) :
+@[simp, cs_run] theorem run_bind (c : CS F α) (f : α → CS F β) (k : Counters) :
     (c >>= f).run k =
       (((f (c.run k).1).run (k.advance (c.run k).2)).1,
         (c.run k).2 ++ ((f (c.run k).1).run (k.advance (c.run k).2)).2) := rfl
@@ -155,16 +155,16 @@ def new_lc (lc : LinearCombination F) : CS F (LinearCombination F) := pure lc
 def enforce_r1cs_constraint (a b c : LinearCombination F) : CS F Unit :=
   ⟨fun _ => ((), [.constrain ⟨a, b, c⟩])⟩
 
-@[simp] theorem run_new_input_variable (v : F) (k : Counters) :
+@[simp, cs_run] theorem run_new_input_variable (v : F) (k : Counters) :
     (new_input_variable v).run k = (.Instance k.num_instance_variables, [.input v]) := rfl
 
-@[simp] theorem run_new_witness_variable (v : F) (k : Counters) :
+@[simp, cs_run] theorem run_new_witness_variable (v : F) (k : Counters) :
     (new_witness_variable v).run k = (.Witness k.num_witness_variables, [.witness v]) := rfl
 
-@[simp] theorem run_new_lc (lc : LinearCombination F) (k : Counters) :
+@[simp, cs_run] theorem run_new_lc (lc : LinearCombination F) (k : Counters) :
     (new_lc lc).run k = (lc, []) := rfl
 
-@[simp] theorem run_enforce_r1cs_constraint (a b c : LinearCombination F) (k : Counters) :
+@[simp, cs_run] theorem run_enforce_r1cs_constraint (a b c : LinearCombination F) (k : Counters) :
     (enforce_r1cs_constraint a b c).run k = ((), [.constrain ⟨a, b, c⟩]) := rfl
 
 /-! ### Satisfaction by an arbitrary assignment -/
@@ -176,25 +176,29 @@ def ConstraintsHold [Field F] (a : Assignment F) (ops : List (Op F)) : Prop :=
 section
 variable [Field F]
 
-@[simp] theorem constraintsHold_nil (a : Assignment F) : ConstraintsHold a ([] : List (Op F)) := by
+@[simp, cs_run] theorem constraintsHold_nil (a : Assignment F) : ConstraintsHold a ([] : List (Op F)) := by
   simp [ConstraintsHold, Op.constraints]
 
-@[simp] theorem constraintsHold_input (a : Assignment F) (v : F) (rest : List (Op F)) :
+@[simp, cs_run] theorem constraintsHold_input (a : Assignment F) (v : F) (rest : List (Op F)) :
     ConstraintsHold a (.input v :: rest) ↔ ConstraintsHold a rest := Iff.rfl
 
-@[simp] theorem constraintsHold_witness (a : Assignment F) (v : F) (rest : List (Op F)) :
+@[simp, cs_run] theorem constraintsHold_witness (a : Assignment F) (v : F) (rest : List (Op F)) :
     ConstraintsHold a (.witness v :: rest) ↔ ConstraintsHold a rest := Iff.rfl
 
-@[simp] theorem constraintsHold_constrain (a : Assignment F) (k : Constraint F)
+@[simp, cs_run] theorem constraintsHold_constrain (a : Assignment F) (k : Constraint F)
     (rest : List (Op F)) :
     ConstraintsHold a (.constrain k :: rest) ↔ k.holds a ∧ ConstraintsHold a rest := by
   simp [ConstraintsHold, Op.constraints]
 
-@[simp] theorem constraintsHold_append (a : Assignment F) (l₁ l₂ : List (Op F)) :
+@[simp, cs_run] theorem constraintsHold_append (a : Assignment F) (l₁ l₂ : List (Op F)) :
     ConstraintsHold a (l₁ ++ l₂) ↔ ConstraintsHold a l₁ ∧ ConstraintsHold a l₂ := by
   simp [ConstraintsHold, Op.constraints_append, or_imp, forall_and]
 
 end
+
+attribute [cs_run] List.append_nil List.nil_append List.singleton_append List.cons_append and_true
+  true_and Constraint.holds Op.inputCount Op.witnessCount Op.inputCount_append
+  Op.witnessCount_append Nat.add_zero Nat.zero_add
 
 /-! ### The honest assignment (executable checks only) -/
 

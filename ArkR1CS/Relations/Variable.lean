@@ -8,6 +8,7 @@ combinations in an `lc_map` and inlines them in `finalize()`; here every
 import Mathlib.Algebra.Field.Defs
 import Mathlib.Algebra.BigOperators.Group.List.Basic
 import Mathlib.Tactic.Ring
+import ArkR1CS.Attr
 
 set_option linter.unusedTactic false
 set_option linter.unnecessarySeqFocus false
@@ -38,11 +39,11 @@ def Variable.eval [Field F] (a : Assignment F) : Variable → F
   | .Instance i => a.instance_assignment i
   | .Witness i => a.witness_assignment i
 
-@[simp] theorem Variable.eval_Zero [Field F] (a : Assignment F) : Variable.eval a .Zero = 0 := rfl
-@[simp] theorem Variable.eval_One [Field F] (a : Assignment F) : Variable.eval a .One = 1 := rfl
-@[simp] theorem Variable.eval_Instance [Field F] (a : Assignment F) (i : Nat) :
+@[simp, cs_eval] theorem Variable.eval_Zero [Field F] (a : Assignment F) : Variable.eval a .Zero = 0 := rfl
+@[simp, cs_eval] theorem Variable.eval_One [Field F] (a : Assignment F) : Variable.eval a .One = 1 := rfl
+@[simp, cs_eval] theorem Variable.eval_Instance [Field F] (a : Assignment F) (i : Nat) :
     Variable.eval a (.Instance i) = a.instance_assignment i := rfl
-@[simp] theorem Variable.eval_Witness [Field F] (a : Assignment F) (i : Nat) :
+@[simp, cs_eval] theorem Variable.eval_Witness [Field F] (a : Assignment F) (i : Nat) :
     Variable.eval a (.Witness i) = a.witness_assignment i := rfl
 
 /-- `LinearCombination<F>`: `∑ cᵢ · vᵢ`. -/
@@ -70,16 +71,16 @@ def diff [Field F] (a b : LinearCombination F) : LinearCombination F := a ++ b.m
 def eval [Field F] (a : Assignment F) (lc : LinearCombination F) : F :=
   (lc.map fun t => t.1 * t.2.eval a).sum
 
-@[simp] theorem eval_nil [Field F] (a : Assignment F) : eval a ([] : LinearCombination F) = 0 := rfl
+@[simp, cs_eval] theorem eval_nil [Field F] (a : Assignment F) : eval a ([] : LinearCombination F) = 0 := rfl
 
-@[simp] theorem eval_cons [Field F] (a : Assignment F) (t : F × Variable) (lc : LinearCombination F) :
+@[simp, cs_eval] theorem eval_cons [Field F] (a : Assignment F) (t : F × Variable) (lc : LinearCombination F) :
     eval a (t :: lc) = t.1 * t.2.eval a + eval a lc := rfl
 
-@[simp] theorem eval_append [Field F] (a : Assignment F) (l₁ l₂ : LinearCombination F) :
+@[simp, cs_eval] theorem eval_append [Field F] (a : Assignment F) (l₁ l₂ : LinearCombination F) :
     eval a (l₁ ++ l₂) = eval a l₁ + eval a l₂ := by
   simp [eval, List.map_append, List.sum_append]
 
-@[simp] theorem eval_mulScalar [Field F] (a : Assignment F) (lc : LinearCombination F) (c : F) :
+@[simp, cs_eval] theorem eval_mulScalar [Field F] (a : Assignment F) (lc : LinearCombination F) (c : F) :
     eval a (lc.mulScalar c) = eval a lc * c := by
   induction lc with
   | nil => simp [mulScalar]
@@ -88,15 +89,15 @@ def eval [Field F] (a : Assignment F) (lc : LinearCombination F) : F :=
     rw [ih]
     ring
 
-@[simp] theorem eval_zero [Field F] (a : Assignment F) : eval a (zero : LinearCombination F) = 0 := rfl
+@[simp, cs_eval] theorem eval_zero [Field F] (a : Assignment F) : eval a (zero : LinearCombination F) = 0 := rfl
 
-@[simp] theorem eval_ofVar [Field F] (a : Assignment F) (v : Variable) :
+@[simp, cs_eval] theorem eval_ofVar [Field F] (a : Assignment F) (v : Variable) :
     eval a (ofVar v) = v.eval a := by simp [ofVar]
 
-@[simp] theorem eval_ofTerm [Field F] (a : Assignment F) (c : F) (v : Variable) :
+@[simp, cs_eval] theorem eval_ofTerm [Field F] (a : Assignment F) (c : F) (v : Variable) :
     eval a (ofTerm c v) = c * v.eval a := by simp [ofTerm]
 
-@[simp] theorem eval_diff [Field F] (a : Assignment F) (l₁ l₂ : LinearCombination F) :
+@[simp, cs_eval] theorem eval_diff [Field F] (a : Assignment F) (l₁ l₂ : LinearCombination F) :
     eval a (diff l₁ l₂) = eval a l₁ - eval a l₂ := by
   simp [diff, sub_eq_add_neg]
 
