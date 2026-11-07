@@ -381,6 +381,13 @@ def square : FpVar F → CS F (FpVar F)
     let p ← v.square
     pure (Var p)
 
+/-- `FieldVar::inverse`. -/
+def inverse : FpVar F → CS F (FpVar F)
+  | Constant c => pure (Constant c⁻¹)
+  | Var v => do
+    let inv ← v.inverse
+    pure (Var inv)
+
 @[simp] theorem eval_add (a : Assignment F) (x y : FpVar F) :
     (x.add y).eval a = x.eval a + y.eval a := by
   cases x <;> cases y <;> simp [add, add_comm]
@@ -419,6 +426,18 @@ theorem square_sound (x : FpVar F) (k : Counters) (a : Assignment F)
   | Var v =>
     simp only [square, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
     exact AllocatedFp.square_sound v k a h
+
+/-- Soundness of `inverse` for a non-zero input: the output is its inverse. -/
+theorem inverse_sound (x : FpVar F) (k : Counters) (a : Assignment F) (hx : x.eval a ≠ 0)
+    (h : ConstraintsHold a (x.inverse.run k).2) :
+    (x.inverse.run k).1.eval a = (x.eval a)⁻¹ := by
+  cases x with
+  | Constant c => simp [inverse]
+  | Var v =>
+    simp only [inverse, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
+    have := AllocatedFp.inverse_sound v k a h
+    simp only [eval_Var] at hx
+    exact eq_inv_of_mul_eq_one_right this
 
 theorem mul_inputCount (x y : FpVar F) (k : Counters) :
     Op.inputCount ((x.mul y).run k).2 = 0 := by

@@ -27,17 +27,17 @@ Write the gadget in `CS F` with the `FpVar` operations, keeping the structure of
 import ArkR1CS
 open ArkR1CS
 
-def squarePlusOne [Field F] [DecidableEq F] (x : FpVar F) : CS F (FpVar F) := do
+def squarePlusOne {F : Type} [Field F] [DecidableEq F] (x : FpVar F) : CS F (FpVar F) := do
   let sq ← x.square
   pure (sq.add FpVar.one)
 
-theorem squarePlusOne_sound [Field F] [DecidableEq F] (x : FpVar F) (k : Counters) (a : Assignment F)
-    (h : ConstraintsHold a ((squarePlusOne x).run k).2) :
+theorem squarePlusOne_sound {F : Type} [Field F] [DecidableEq F] (x : FpVar F) (k : Counters)
+    (a : Assignment F) (h : ConstraintsHold a ((squarePlusOne x).run k).2) :
     ((squarePlusOne x).run k).1.eval a = x.eval a * x.eval a + 1 := by
   simp only [squarePlusOne, CS.run_bind, CS.run_pure, List.append_nil] at h ⊢
   rw [FpVar.eval_add, FpVar.square_sound x k a h, FpVar.eval_one]
 ```
 
-`renderTrace` prints the constraint matrices and the prover's assignment of a gadget run, to be checked against the arkworks constraint system built from the same circuit. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full example.
+`renderTrace` prints the constraint matrices and the prover's assignment of a gadget run, to be checked against the arkworks constraint system built from the same circuit. `Traces.lean` and `tests/arkworks` do this for every modelled operation: the Lean build checks the committed traces against the model, and `cargo test --manifest-path tests/arkworks/Cargo.toml` checks them against arkworks. See [ark-hybrid-compression](https://github.com/Robert-MacWha/ark-hybrid-compression) for a full circuit.
 
 Build with `lake exe cache get` followed by `lake build`.

@@ -1,5 +1,5 @@
 name = "ark-r1cs"
-defaultTargets = ["ArkR1CS"]
+defaultTargets = ["ArkR1CS", "Traces"]
 
 [leanOptions]
 autoImplicit = false
@@ -12,3 +12,6 @@ rev = "v4.35.0"
 
 [[lean_lib]]
 name = "ArkR1CS"
+
+[[lean_lib]]
+name = "Traces"

@@ -121,7 +121,7 @@
    "configFile": "lakefile.toml"
   }
  ],
- "name": "ark-r1cs",
+ "name": "«ark-r1cs»",
  "lakeDir": ".lake",
  "fixedToolchain": false
 }

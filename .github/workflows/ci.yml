@@ -7,10 +7,22 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  lean:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: leanprover/lean-action@v1
       with:
         use-mathlib-cache: true
+
+  arkworks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "tests/arkworks"
+    - run: cargo test --manifest-path tests/arkworks/Cargo.toml
+    - run: cargo fmt --manifest-path tests/arkworks/Cargo.toml -- --check
+    - run: cargo clippy --manifest-path tests/arkworks/Cargo.toml --all-targets -- -D warnings
