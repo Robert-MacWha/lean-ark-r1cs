@@ -20,59 +20,51 @@ instance : Fact (Nat.Prime 17) := ⟨by norm_num⟩
 
 namespace Traces
 
-/-- Linear and multiplicative operations through every branch of the
-`impl_ops!` dispatch, including `Mul<F>` and the `is_one()` / `is_zero()`
-shortcuts. -/
 def arith : CS F17 Unit := do
   let x ← FpVar.new_witness 3
   let y ← FpVar.new_witness 5
-  let s := x.add y
-  let d := x.sub y
+  let s := x + y
+  let d := x - y
   let p ← x.mul y
-  let t := (s.add (.Constant 7)).sub (.Constant 2)
+  let t := (s + FpVar.Constant 7) - FpVar.Constant 2
   let u ← (FpVar.Constant 4).mul d
   let v ← (FpVar.Constant 1).mul d
-  let w := d.add (.Constant 0)
+  let w := d + FpVar.Constant 0
   let l := (FpVar.Constant 2 + x) + (FpVar.Constant 2 - y)
   let m ← x.mul_scalar 6
   let m0 ← x.mul_scalar 0
-  let r := ((p.add t).add (u.add (v.add w))).add (l + (m + m0))
+  let r := ((p + t) + (u + (v + w))) + (l + (m + m0))
   let z ← FpVar.new_witness r.value
-  EqGadget.enforce_equal z r
+  z.enforce_equal r
 
-/-- `double`, `negate`, `square` and `inverse`, on variables and constants. -/
 def field : CS F17 Unit := do
   let x ← FpVar.new_witness 3
   let d := x.double
-  let n := x.negate
+  let n := -x
   let sq ← x.square
   let inv ← x.inverse
   let sc ← (FpVar.Constant (4 : F17)).square
   let ic ← (FpVar.Constant (4 : F17)).inverse
-  let r := ((d.add n).add (sq.add inv)).add (sc + ic)
+  let r := ((d + n) + (sq + inv)) + (sc + ic)
   let z ← FpVar.new_witness r.value
-  EqGadget.enforce_equal z r
+  z.enforce_equal r
 
-/-- Every `EqGadget` path: `enforce_equal` on each constant/variable
-combination, `is_eq` (built on `is_neq`) and the default `is_neq` against
-variables and constants, `enforce_not_equal`, and the conditional methods
-with an allocated `should_enforce` that is true (`b`) and false (`c`). -/
 def eq : CS F17 Unit := do
   let x ← FpVar.new_input 3
   let y ← FpVar.new_witness 3
-  EqGadget.enforce_equal x y
-  EqGadget.enforce_equal x (FpVar.Constant 3)
-  EqGadget.enforce_equal (FpVar.Constant 3) y
-  let _ ← EqGadget.is_eq (F := F17) x y
-  let b ← EqGadget.is_eq (F := F17) x (FpVar.Constant 3)
-  let c ← EqGadget.is_eq (F := F17) (FpVar.Constant 5) y
-  let _ ← EqGadget.is_eq (F := F17) (FpVar.Constant (5 : F17)) (FpVar.Constant 5)
-  let _ ← EqGadget.is_neq (F := F17) x (FpVar.Constant 4)
-  EqGadget.conditional_enforce_equal x (FpVar.Constant 3) b
-  EqGadget.conditional_enforce_not_equal x (FpVar.Constant 4) b
-  EqGadget.conditional_enforce_equal y (FpVar.Constant 7) c
-  EqGadget.conditional_enforce_not_equal y (FpVar.Constant 3) c
-  EqGadget.enforce_not_equal x (FpVar.Constant 4)
+  x.enforce_equal y
+  x.enforce_equal (FpVar.Constant 3)
+  (FpVar.Constant 3).enforce_equal y
+  let _ ← x.is_eq y
+  let b ← x.is_eq (FpVar.Constant 3)
+  let c ← (FpVar.Constant 5).is_eq y
+  let _ ← (FpVar.Constant (5 : F17)).is_eq (FpVar.Constant 5)
+  let _ ← x.is_neq (FpVar.Constant 4)
+  x.conditional_enforce_equal (FpVar.Constant 3) b
+  x.conditional_enforce_not_equal (FpVar.Constant 4) b
+  y.conditional_enforce_equal (FpVar.Constant 7) c
+  y.conditional_enforce_not_equal (FpVar.Constant 3) c
+  x.enforce_not_equal (FpVar.Constant 4)
 
 def cases : List (String × CS F17 Unit) :=
   [("arith", arith), ("field", field), ("eq", eq)]

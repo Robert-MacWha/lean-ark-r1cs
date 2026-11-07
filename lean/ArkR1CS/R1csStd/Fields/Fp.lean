@@ -479,6 +479,11 @@ instance : EqGadget F (FpVar F) where
   conditional_enforce_equal := conditional_enforce_equal
   conditional_enforce_not_equal := conditional_enforce_not_equal
 
+/-- The `EqGadget` default methods, so that `x.enforce_equal y` etc. work as in Rust. -/
+abbrev enforce_equal (x y : FpVar F) : CS F Unit := EqGadget.enforce_equal x y
+abbrev enforce_not_equal (x y : FpVar F) : CS F Unit := EqGadget.enforce_not_equal x y
+abbrev is_neq (x y : FpVar F) : CS F (Boolean F) := EqGadget.is_neq (F := F) x y
+
 @[simp] theorem EqGadget_enforce_equal (x y : FpVar F) :
     EqGadget.enforce_equal x y = conditional_enforce_equal x y Boolean.TRUE := rfl
 
