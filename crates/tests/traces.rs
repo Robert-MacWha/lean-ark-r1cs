@@ -64,10 +64,7 @@ fn traces_match_lean_model() {
         concat!(env!("CARGO_MANIFEST_DIR"), "/../lean"),
         "Traces.lean",
     );
-    let circuits: [(
-        &str,
-        fn(ConstraintSystemRef<F17>) -> Result<(), SynthesisError>,
-    ); 3] = [("arith", arith), ("field", field), ("eq", eq)];
+    let circuits: [(&str, Circuit); 3] = [("arith", arith), ("field", field), ("eq", eq)];
     assert_eq!(
         expected.len(),
         circuits.len(),
