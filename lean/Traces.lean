@@ -66,8 +66,49 @@ def eq : CS F17 Unit := do
   y.conditional_enforce_not_equal (FpVar.Constant 3) c
   x.enforce_not_equal (FpVar.Constant 4)
 
+/-- Boolean allocation and every constant/variable path of `&`, `|` and `!`. -/
+def boolean : CS F17 Unit := do
+  let x ← Boolean.new_witness true
+  let y ← Boolean.new_witness false
+  let _ ← x.and y
+  let _ ← x.or y
+  let _ ← x.and Boolean.TRUE
+  let _ ← Boolean.FALSE.and y
+  let _ ← x.or Boolean.FALSE
+  let _ ← Boolean.TRUE.or y
+  let n := x.not
+  let _ ← n.or y
+  pure ()
+
+/-- `conditionally_select` on every constant/variable combination, and
+`From<Boolean>`. -/
+def select : CS F17 Unit := do
+  let c ← Boolean.new_witness true
+  let x ← FpVar.new_witness 3
+  let y ← FpVar.new_witness 5
+  let a ← FpVar.conditionally_select c x y
+  let b ← FpVar.conditionally_select c (.Constant 7) y
+  let d ← FpVar.conditionally_select c x (.Constant 9)
+  let e ← FpVar.conditionally_select c (.Constant 7) (.Constant 9)
+  let f ← FpVar.conditionally_select Boolean.FALSE x y
+  let r := (a + b) + ((d + e) + (f + FpVar.ofBoolean c))
+  let z ← FpVar.new_witness r.value
+  z.enforce_equal r
+
+/-- `to_bits_le_with_top_bits_zero`, `le_bits_to_fp` and `Sum`. -/
+def bits : CS F17 Unit := do
+  let x ← FpVar.new_witness 11
+  let r ← x.to_bits_le_with_top_bits_zero 4
+  let lo := Boolean.le_bits_to_fp (r.1.take 2)
+  let hi := Boolean.le_bits_to_fp ([Boolean.TRUE] ++ r.1.drop 2)
+  let k := Boolean.le_bits_to_fp [Boolean.TRUE, Boolean.FALSE, Boolean.TRUE]
+  let s := FpVar.sum [lo, hi, k, .Constant 2]
+  let z ← FpVar.new_witness s.value
+  z.enforce_equal s
+
 def cases : List (String × CS F17 Unit) :=
-  [("arith", arith), ("field", field), ("eq", eq)]
+  [("arith", arith), ("field", field), ("eq", eq), ("boolean", boolean), ("select", select),
+    ("bits", bits)]
 
 def render (c : CS F17 Unit) : String :=
   renderTrace (fun x : F17 => toString x.val) (c.run Counters.new).2
