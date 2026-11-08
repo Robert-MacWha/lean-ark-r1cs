@@ -24,7 +24,8 @@ namespace ArkR1CS
 
 variable {F : Type} [Field F] [DecidableEq F]
 
-/-- `AllocatedFp<F>`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp`: an allocated field element. `value` is always
+present (proving mode), and `variable` is kept as its inlined linear combination `lc`. -/
 structure AllocatedFp (F : Type) where
   value : F
   /-- `variable` in arkworks (a `Variable`, here its inlined linear combination). -/
@@ -33,79 +34,94 @@ structure AllocatedFp (F : Type) where
 
 namespace AllocatedFp
 
-/-- `AllocatedFp::new(value, variable, cs)`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::new`. -/
 def new (value : F) (lc : LinearCombination F) : AllocatedFp F := ⟨value, lc⟩
 
-/-- Value under an arbitrary assignment (ignores the cached `value`). -/
+/-- The value of the variable under an arbitrary assignment (ignores the cached `value`). No
+arkworks counterpart. -/
 def eval (a : Assignment F) (x : AllocatedFp F) : F := x.lc.eval a
 
+/-- `new v lc` evaluates to the value of `lc`. -/
 @[simp, cs_eval] theorem eval_new (a : Assignment F) (v : F) (lc : LinearCombination F) :
     (new v lc).eval a = lc.eval a := rfl
 
+/-- The linear combination of `new v lc` is `lc`. -/
 @[simp, cs_eval] theorem lc_new (v : F) (lc : LinearCombination F) : (new v lc).lc = lc := rfl
 
 /-! ### `AllocVar` -/
 
-/-- `AllocVar::new_variable` with `AllocationMode::Constant`:
-`cs.new_lc((v, Variable::One))`. -/
+/-- Models `AllocVar::new_variable` for `ark_r1cs_std::fields::fp::AllocatedFp` with
+`AllocationMode::Constant`: the term `c · One`, allocating nothing. -/
 def new_constant (c : F) : AllocatedFp F := new c (LinearCombination.ofTerm c .One)
 
-/-- `AllocationMode::Input`. -/
+/-- Models `AllocVar::new_input` for `ark_r1cs_std::fields::fp::AllocatedFp`: allocates an
+instance variable. -/
 def new_input (v : F) : CS F (AllocatedFp F) := do
   let var ← new_input_variable v
   pure (new v (LinearCombination.ofVar var))
 
-/-- `AllocationMode::Witness`. -/
+/-- Models `AllocVar::new_witness` for `ark_r1cs_std::fields::fp::AllocatedFp`: allocates a
+witness variable. -/
 def new_witness (v : F) : CS F (AllocatedFp F) := do
   let var ← new_witness_variable v
   pure (new v (LinearCombination.ofVar var))
 
+/-- A constant evaluates to itself. -/
 @[simp, cs_eval] theorem eval_new_constant (a : Assignment F) (c : F) : (new_constant c).eval a = c := by
   simp [new_constant]
 
+/-- `new_input v` returns the next instance variable and records one input. -/
 @[simp, cs_run] theorem run_new_input (v : F) (k : Counters) :
     (new_input v).run k =
       (new v (LinearCombination.ofVar (.Instance k.num_instance_variables)), [.input v]) := rfl
 
+/-- `new_witness v` returns the next witness variable and records one witness. -/
 @[simp, cs_run] theorem run_new_witness (v : F) (k : Counters) :
     (new_witness v).run k =
       (new v (LinearCombination.ofVar (.Witness k.num_witness_variables)), [.witness v]) := rfl
 
 /-! ### Linear operations (no constraints) -/
 
-/-- `AllocatedFp::add`: `lc![self.lc, other.lc]`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::add`: `x + y` as a linear combination, with no
+constraint. -/
 def add (x y : AllocatedFp F) : AllocatedFp F :=
   new (x.value + y.value) (x.lc ++ y.lc)
 
-/-- `AllocatedFp::sub`: `lc_diff![self.lc, other.lc]`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::sub`: `x - y` as a linear combination, with no
+constraint. -/
 def sub (x y : AllocatedFp F) : AllocatedFp F :=
   new (x.value - y.value) (LinearCombination.diff x.lc y.lc)
 
-/-- `AllocatedFp::add_constant`: returns `self` when `other.is_zero()`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::add_constant`: `x + c`, returning `x`
+unchanged when `c = 0`. -/
 def add_constant (x : AllocatedFp F) (c : F) : AllocatedFp F :=
   if c = 0 then x else new (x.value + c) (x.lc ++ LinearCombination.ofTerm c .One)
 
-/-- `AllocatedFp::sub_constant`: `self.add_constant(-other)`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::sub_constant`: `x.add_constant(-c)`. -/
 def sub_constant (x : AllocatedFp F) (c : F) : AllocatedFp F := x.add_constant (-c)
 
-/-- `AllocatedFp::mul_constant`: returns `self` when `other.is_one()`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::mul_constant`: `x * c`, returning `x`
+unchanged when `c = 1`. -/
 def mul_constant (x : AllocatedFp F) (c : F) : AllocatedFp F :=
   if c = 1 then x else new (x.value * c) (x.lc.mulScalar c)
 
-/-- `AllocatedFp::double`: `(F::ONE.double(), self.lc)`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::double`: `2 * x`, with no constraint. -/
 def double (x : AllocatedFp F) : AllocatedFp F :=
   new (x.value + x.value) (x.lc.mulScalar 2)
 
-/-- `AllocatedFp::negate`: `lc!() - self.lc`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::negate`: `-x`, with no constraint. -/
 def negate (x : AllocatedFp F) : AllocatedFp F :=
   new (-x.value) (LinearCombination.diff LinearCombination.zero x.lc)
 
+/-- `x.add y` evaluates to `x + y`. -/
 @[simp, cs_eval] theorem eval_add (a : Assignment F) (x y : AllocatedFp F) :
     (x.add y).eval a = x.eval a + y.eval a := by simp [add, eval]
 
+/-- `x.sub y` evaluates to `x - y`. -/
 @[simp, cs_eval] theorem eval_sub (a : Assignment F) (x y : AllocatedFp F) :
     (x.sub y).eval a = x.eval a - y.eval a := by simp [sub, eval]
 
+/-- `x.add_constant c` evaluates to `x + c`. -/
 @[simp, cs_eval] theorem eval_add_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
     (x.add_constant c).eval a = x.eval a + c := by
   unfold add_constant
@@ -113,10 +129,12 @@ def negate (x : AllocatedFp F) : AllocatedFp F :=
   · simp [h]
   · simp [eval]
 
+/-- `x.sub_constant c` evaluates to `x - c`. -/
 @[simp, cs_eval] theorem eval_sub_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
     (x.sub_constant c).eval a = x.eval a - c := by
   simp [sub_constant, sub_eq_add_neg]
 
+/-- `x.mul_constant c` evaluates to `x * c`. -/
 @[simp, cs_eval] theorem eval_mul_constant (a : Assignment F) (x : AllocatedFp F) (c : F) :
     (x.mul_constant c).eval a = x.eval a * c := by
   unfold mul_constant
@@ -124,41 +142,48 @@ def negate (x : AllocatedFp F) : AllocatedFp F :=
   · simp [h]
   · simp [eval]
 
+/-- `x.double` evaluates to `x + x`. -/
 @[simp, cs_eval] theorem eval_double (a : Assignment F) (x : AllocatedFp F) :
     x.double.eval a = x.eval a + x.eval a := by
   simp [double, eval]
   ring
 
+/-- `x.negate` evaluates to `-x`. -/
 @[simp, cs_eval] theorem eval_negate (a : Assignment F) (x : AllocatedFp F) :
     x.negate.eval a = -x.eval a := by simp [negate, eval]
 
 /-! ### Multiplicative operations (one constraint each) -/
 
-/-- `AllocatedFp::mul`: allocates the product and enforces `self * other = product`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::mul`: allocates the product as a witness and
+enforces `x * y = product`. -/
 def mul (x y : AllocatedFp F) : CS F (AllocatedFp F) := do
   let product ← new_witness (x.value * y.value)
   enforce_r1cs_constraint x.lc y.lc product.lc
   pure product
 
-/-- `AllocatedFp::square`: `self.mul(self)`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::square`: `x.mul(x)`. -/
 def square (x : AllocatedFp F) : CS F (AllocatedFp F) := x.mul x
 
-/-- `AllocatedFp::inverse`: allocates `self⁻¹` and enforces `self * inverse = 1`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::inverse`: allocates `x⁻¹` as a witness and
+enforces `x * inverse = 1`. -/
 def inverse (x : AllocatedFp F) : CS F (AllocatedFp F) := do
   let inv ← new_witness x.value⁻¹
   enforce_r1cs_constraint x.lc inv.lc (LinearCombination.ofVar .One)
   pure inv
 
+/-- If the constraints hold, the output equals `x * y`. -/
 theorem mul_sound (x y : AllocatedFp F) :
     Sound (x.mul y) fun a r => r.eval a = x.eval a * y.eval a := by
   intro k a h
   simp only [mul, cs_run] at h ⊢
   simp [eval, h]
 
+/-- If the constraints hold, the output equals `x * x`. -/
 theorem square_sound (x : AllocatedFp F) :
     Sound x.square fun a r => r.eval a = x.eval a * x.eval a :=
   mul_sound x x
 
+/-- If the constraints hold, `x` times the output is 1 (so `x ≠ 0` and the output is `x⁻¹`). -/
 theorem inverse_sound (x : AllocatedFp F) :
     Sound x.inverse fun a r => x.eval a * r.eval a = 1 := by
   intro k a h
@@ -167,9 +192,9 @@ theorem inverse_sound (x : AllocatedFp F) :
 
 /-! ### Equality -/
 
-/-- `AllocatedFp::is_neq`: two constraints,
-`(self - other) * multiplier = is_not_equal` and
-`(self - other) * !is_not_equal = 0`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::is_neq`: allocates the bit `x ≠ y` and a
+multiplier, and enforces `(x - y) * multiplier = is_not_equal` and
+`(x - y) * (1 - is_not_equal) = 0`. -/
 def is_neq (x y : AllocatedFp F) : CS F (Boolean F) := do
   let is_not_equal ← AllocatedBool.new_witness_without_booleanity_check (decide (x.value ≠ y.value))
   let multiplier ← new_witness_variable
@@ -180,26 +205,26 @@ def is_neq (x y : AllocatedFp F) : CS F (Boolean F) := do
   enforce_r1cs_constraint difference is_equal.lc LinearCombination.zero
   pure (Boolean.Var is_not_equal)
 
-/-- `AllocatedFp::is_eq`: `self.is_neq(other).not()`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::is_eq`: `!x.is_neq(y)`. -/
 def is_eq (x y : AllocatedFp F) : CS F (Boolean F) := do
   let b ← x.is_neq y
   pure b.not
 
-/-- `AllocatedFp::conditional_enforce_equal`:
-`(self - other) * should_enforce = 0`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::conditional_enforce_equal`: enforces
+`(x - y) * should_enforce = 0`. -/
 def conditional_enforce_equal (x y : AllocatedFp F) (should_enforce : Boolean F) : CS F Unit :=
   enforce_r1cs_constraint (LinearCombination.diff x.lc y.lc) should_enforce.lc
     LinearCombination.zero
 
-/-- `AllocatedFp::conditional_enforce_not_equal`:
-`(self - other) * multiplier = should_enforce`. -/
+/-- Models `ark_r1cs_std::fields::fp::AllocatedFp::conditional_enforce_not_equal`: allocates a
+multiplier and enforces `(x - y) * multiplier = should_enforce`. -/
 def conditional_enforce_not_equal (x y : AllocatedFp F) (should_enforce : Boolean F) :
     CS F Unit := do
   let multiplier ← new_witness (if should_enforce.value then (x.value - y.value)⁻¹ else 0)
   enforce_r1cs_constraint (LinearCombination.diff x.lc y.lc) multiplier.lc
     should_enforce.lc
 
-/-- Soundness of `is_neq`: the returned bit is the indicator of `self ≠ other`. -/
+/-- If the constraints hold, the output is 0 when `x = y` and 1 otherwise. -/
 theorem is_neq_sound (x y : AllocatedFp F) :
     Sound (x.is_neq y) fun a r => r.eval a = if x.eval a = y.eval a then 0 else 1 := by
   intro k a h
@@ -217,7 +242,7 @@ theorem is_neq_sound (x y : AllocatedFp F) :
     · exact absurd h hd
     · linear_combination -h
 
-/-- Soundness of `is_eq`: the returned bit is the indicator of `self = other`. -/
+/-- If the constraints hold, the output is 1 when `x = y` and 0 otherwise. -/
 theorem is_eq_sound (x y : AllocatedFp F) :
     Sound (x.is_eq y) fun a r => r.eval a = if x.eval a = y.eval a then 1 else 0 := by
   intro k a h
@@ -230,6 +255,7 @@ theorem is_eq_sound (x y : AllocatedFp F) :
   rw [this]
   split_ifs <;> simp
 
+/-- If the constraints hold and `should_enforce` is 1, then `x = y`. -/
 theorem conditional_enforce_equal_sound (x y : AllocatedFp F) (b : Boolean F) :
     Sound (x.conditional_enforce_equal y b) fun a _ => b.eval a = 1 → x.eval a = y.eval a := by
   intro k a h hb
@@ -238,6 +264,7 @@ theorem conditional_enforce_equal_sound (x y : AllocatedFp F) (b : Boolean F) :
   rw [hb, mul_one] at h
   exact sub_eq_zero.mp h
 
+/-- If the constraints hold and `should_enforce` is 1, then `x ≠ y`. -/
 theorem conditional_enforce_not_equal_sound (x y : AllocatedFp F) (b : Boolean F) :
     Sound (x.conditional_enforce_not_equal y b) fun a _ => b.eval a = 1 → x.eval a ≠ y.eval a := by
   intro k a h hb
@@ -253,7 +280,7 @@ end AllocatedFp
 
 /-! ## `FpVar<F>` -/
 
-/-- `FpVar<F>`. -/
+/-- Models `ark_r1cs_std::fields::fp::FpVar`: a constant or an allocated variable. -/
 inductive FpVar (F : Type)
   | Constant (c : F)
   | Var (v : AllocatedFp F)
@@ -261,70 +288,81 @@ inductive FpVar (F : Type)
 
 namespace FpVar
 
-/-- Value under an arbitrary assignment. -/
+/-- The value under an arbitrary assignment. No arkworks counterpart. -/
 def eval (a : Assignment F) : FpVar F → F
   | Constant c => c
   | Var v => v.eval a
 
-/-- `FpVar::value()`. -/
+/-- Models `GR1CSVar::value` for `ark_r1cs_std::fields::fp::FpVar`: the value the prover
+assigned. -/
 def value : FpVar F → F
   | Constant c => c
   | Var v => v.value
 
-/-- `FpVar::is_constant()`. -/
+/-- Models `GR1CSVar::is_constant` for `ark_r1cs_std::fields::fp::FpVar`. -/
 def isConstant : FpVar F → Prop
   | Constant _ => True
   | Var _ => False
 
+/-- A constant evaluates to itself. -/
 @[simp, cs_eval] theorem eval_Constant (a : Assignment F) (c : F) : eval a (Constant c) = c := rfl
+/-- A variable evaluates to the value of its `AllocatedFp`. -/
 @[simp, cs_eval] theorem eval_Var (a : Assignment F) (v : AllocatedFp F) : eval a (Var v) = v.eval a := rfl
 
 /-! ### Constants and allocation -/
 
-/-- `FpVar::zero()`. -/
+/-- Models `FieldVar::zero`: the constant 0. -/
 def zero : FpVar F := Constant 0
-/-- `FpVar::one()`. -/
+/-- Models `FieldVar::one`: the constant 1. -/
 def one : FpVar F := Constant 1
 
-/-- `FpVar::new_input`. -/
+/-- Models `AllocVar::new_input` for `ark_r1cs_std::fields::fp::FpVar`: allocates an instance
+variable. -/
 def new_input (v : F) : CS F (FpVar F) := do
   let x ← AllocatedFp.new_input v
   pure (Var x)
 
-/-- `FpVar::new_witness`. -/
+/-- Models `AllocVar::new_witness` for `ark_r1cs_std::fields::fp::FpVar`: allocates a witness
+variable. -/
 def new_witness (v : F) : CS F (FpVar F) := do
   let x ← AllocatedFp.new_witness v
   pure (Var x)
 
+/-- `new_input v` returns the next instance variable and records one input. -/
 @[simp, cs_run] theorem run_new_input (v : F) (k : Counters) :
     (new_input v).run k =
       (Var (AllocatedFp.new v (LinearCombination.ofVar (.Instance k.num_instance_variables))),
         [.input v]) := rfl
 
+/-- `new_witness v` returns the next witness variable and records one witness. -/
 @[simp, cs_run] theorem run_new_witness (v : F) (k : Counters) :
     (new_witness v).run k =
       (Var (AllocatedFp.new v (LinearCombination.ofVar (.Witness k.num_witness_variables))),
         [.witness v]) := rfl
 
+/-- `zero` evaluates to 0. -/
 @[simp, cs_eval] theorem eval_zero (a : Assignment F) : eval a (zero : FpVar F) = 0 := rfl
+/-- `one` evaluates to 1. -/
 @[simp, cs_eval] theorem eval_one (a : Assignment F) : eval a (one : FpVar F) = 1 := rfl
 
 /-! ### `impl_ops!` dispatch -/
 
-/-- `impl Add for FpVar`. -/
+/-- Models `impl Add for ark_r1cs_std::fields::fp::FpVar`: constant-folds, otherwise
+`AllocatedFp::add` / `add_constant`. No constraint. -/
 def add : FpVar F → FpVar F → FpVar F
   | Constant c₁, Constant c₂ => Constant (c₁ + c₂)
   | Constant c, Var v | Var v, Constant c => Var (v.add_constant c)
   | Var v₁, Var v₂ => Var (v₁.add v₂)
 
-/-- `impl Sub for FpVar`. -/
+/-- Models `impl Sub for ark_r1cs_std::fields::fp::FpVar`: constant-folds, otherwise
+`AllocatedFp::sub` / `sub_constant`. No constraint. -/
 def sub : FpVar F → FpVar F → FpVar F
   | Constant c₁, Constant c₂ => Constant (c₁ - c₂)
   | Var v, Constant c => Var (v.sub_constant c)
   | Constant c, Var v => Var (v.sub_constant c).negate
   | Var v₁, Var v₂ => Var (v₁.sub v₂)
 
-/-- `FieldVar::negate`. -/
+/-- Models `FieldVar::negate` / `impl Neg for ark_r1cs_std::fields::fp::FpVar`. No constraint. -/
 def negate : FpVar F → FpVar F
   | Constant c => Constant (-c)
   | Var v => Var v.negate
@@ -335,7 +373,8 @@ instance : Add (FpVar F) := ⟨add⟩
 instance : Sub (FpVar F) := ⟨sub⟩
 instance : Neg (FpVar F) := ⟨negate⟩
 
-/-- `impl Mul for FpVar`. -/
+/-- Models `impl Mul for ark_r1cs_std::fields::fp::FpVar`: constant-folds, uses `mul_constant`
+when one side is constant, and otherwise `AllocatedFp::mul` (one constraint). -/
 def mul : FpVar F → FpVar F → CS F (FpVar F)
   | Constant c₁, Constant c₂ => pure (Constant (c₁ * c₂))
   | Constant c, Var v | Var v, Constant c => pure (Var (v.mul_constant c))
@@ -343,47 +382,54 @@ def mul : FpVar F → FpVar F → CS F (FpVar F)
     let p ← v₁.mul v₂
     pure (Var p)
 
-/-- `impl Mul<F> for FpVar`: `if other.is_zero() { zero } else { this * Constant(other) }`. -/
+/-- Models `impl Mul<F> for ark_r1cs_std::fields::fp::FpVar`: zero when `c = 0`, otherwise
+`x * Constant(c)`. -/
 def mul_scalar (x : FpVar F) (c : F) : CS F (FpVar F) :=
   if c = 0 then pure zero else x.mul (Constant c)
 
-/-- `FieldVar::double`. -/
+/-- Models `FieldVar::double`. No constraint. -/
 def double : FpVar F → FpVar F
   | Constant c => Constant (c + c)
   | Var v => Var v.double
 
-/-- `FieldVar::square`. -/
+/-- Models `FieldVar::square`: constant-folds, otherwise `AllocatedFp::square` (one constraint). -/
 def square : FpVar F → CS F (FpVar F)
   | Constant c => pure (Constant (c * c))
   | Var v => do
     let p ← v.square
     pure (Var p)
 
-/-- `FieldVar::inverse`. -/
+/-- Models `FieldVar::inverse`: constant-folds, otherwise `AllocatedFp::inverse` (one
+constraint). For `Constant 0` arkworks returns an error; the model returns `Constant 0`. -/
 def inverse : FpVar F → CS F (FpVar F)
   | Constant c => pure (Constant c⁻¹)
   | Var v => do
     let inv ← v.inverse
     pure (Var inv)
 
+/-- `x + y` evaluates to the sum of the values. -/
 @[simp, cs_eval] theorem eval_hAdd (a : Assignment F) (x y : FpVar F) :
     (x + y).eval a = x.eval a + y.eval a := by
   show (add x y).eval a = _
   cases x <;> cases y <;> simp [add, add_comm]
 
+/-- `x - y` evaluates to the difference of the values. -/
 @[simp, cs_eval] theorem eval_hSub (a : Assignment F) (x y : FpVar F) :
     (x - y).eval a = x.eval a - y.eval a := by
   show (sub x y).eval a = _
   cases x <;> cases y <;> simp [sub, sub_eq_add_neg]
 
+/-- `-x` evaluates to the negated value. -/
 @[simp, cs_eval] theorem eval_neg (a : Assignment F) (x : FpVar F) : (-x).eval a = -x.eval a := by
   show (negate x).eval a = _
   cases x <;> simp [negate]
 
+/-- `x.double` evaluates to `x + x`. -/
 @[simp, cs_eval] theorem eval_double (a : Assignment F) (x : FpVar F) :
     x.double.eval a = x.eval a + x.eval a := by
   cases x <;> simp [double]
 
+/-- If the constraints hold, the output equals `x * y`. -/
 theorem mul_sound (x y : FpVar F) :
     Sound (x.mul y) fun a r => r.eval a = x.eval a * y.eval a := by
   intro k a h
@@ -399,6 +445,7 @@ theorem mul_sound (x y : FpVar F) :
       simp only [mul, cs_run] at h ⊢
       exact AllocatedFp.mul_sound v₁ v₂ k a h
 
+/-- If the constraints hold, the output equals `x * x`. -/
 theorem square_sound (x : FpVar F) :
     Sound x.square fun a r => r.eval a = x.eval a * x.eval a := by
   intro k a h
@@ -408,6 +455,7 @@ theorem square_sound (x : FpVar F) :
     simp only [square, cs_run] at h ⊢
     exact AllocatedFp.square_sound v k a h
 
+/-- If the constraints hold, the output equals `x * c`. -/
 theorem mul_scalar_sound (x : FpVar F) (c : F) :
     Sound (x.mul_scalar c) fun a r => r.eval a = x.eval a * c := by
   intro k a h
@@ -416,9 +464,7 @@ theorem mul_scalar_sound (x : FpVar F) (c : F) :
   · simp only [mul_scalar, hc, ↓reduceIte] at h ⊢
     exact mul_sound x (Constant c) k a h
 
-/-- Soundness of `inverse` for a non-zero input: the output is its inverse.
-(For a `Var` input the constraint itself forces the input to be non-zero; for
-a `Constant 0` arkworks returns an error, while the model returns `Constant 0`.) -/
+/-- If the constraints hold and `x ≠ 0`, the output equals `x⁻¹`. -/
 theorem inverse_sound (x : FpVar F) :
     Sound x.inverse fun a r => x.eval a ≠ 0 → r.eval a = (x.eval a)⁻¹ := by
   intro k a h hx
@@ -430,26 +476,29 @@ theorem inverse_sound (x : FpVar F) :
     simp only [eval_Var] at hx
     exact eq_inv_of_mul_eq_one_right this
 
+/-- `x.mul y` allocates no public inputs. -/
 theorem mul_inputs (x y : FpVar F) (k : Counters) : Op.inputs ((x.mul y).run k).2 = [] := by
   cases x <;> cases y <;> simp [mul, AllocatedFp.mul, cs_run]
 
 /-! ### `impl EqGadget for FpVar` -/
 
-/-- `FpVar::is_eq`. -/
+/-- Models `EqGadget::is_eq` for `ark_r1cs_std::fields::fp::FpVar`: constant-folds, otherwise
+`AllocatedFp::is_eq`, treating a constant side as `new_constant`. -/
 def is_eq : FpVar F → FpVar F → CS F (Boolean F)
   | Constant c₁, Constant c₂ => pure (Boolean.Constant (decide (c₁ = c₂)))
   | Constant c, Var v | Var v, Constant c => (AllocatedFp.new_constant c).is_eq v
   | Var v₁, Var v₂ => v₁.is_eq v₂
 
-/-- `FpVar::conditional_enforce_equal`. Note the `(Constant, Constant)` case
-emits nothing, even if the constants differ. -/
+/-- Models `EqGadget::conditional_enforce_equal` for `ark_r1cs_std::fields::fp::FpVar`. The
+`(Constant, Constant)` case emits nothing, even if the constants differ. -/
 def conditional_enforce_equal : FpVar F → FpVar F → Boolean F → CS F Unit
   | Constant _, Constant _, _ => pure ()
   | Constant c, Var v, b | Var v, Constant c, b =>
     (AllocatedFp.new_constant c).conditional_enforce_equal v b
   | Var v₁, Var v₂, b => v₁.conditional_enforce_equal v₂ b
 
-/-- `FpVar::conditional_enforce_not_equal`. -/
+/-- Models `EqGadget::conditional_enforce_not_equal` for `ark_r1cs_std::fields::fp::FpVar`. The
+`(Constant, Constant)` case emits nothing. -/
 def conditional_enforce_not_equal : FpVar F → FpVar F → Boolean F → CS F Unit
   | Constant _, Constant _, _ => pure ()
   | Constant c, Var v, b | Var v, Constant c, b =>
@@ -461,19 +510,23 @@ instance : EqGadget F (FpVar F) where
   conditional_enforce_equal := conditional_enforce_equal
   conditional_enforce_not_equal := conditional_enforce_not_equal
 
-/-- The `EqGadget` default methods, so that `x.enforce_equal y` etc. work as in Rust. -/
+/-- Models `EqGadget::enforce_equal` (default method), so `x.enforce_equal y` works as in Rust. -/
 abbrev enforce_equal (x y : FpVar F) : CS F Unit := EqGadget.enforce_equal x y
+/-- Models `EqGadget::enforce_not_equal` (default method). -/
 abbrev enforce_not_equal (x y : FpVar F) : CS F Unit := EqGadget.enforce_not_equal x y
+/-- Models `EqGadget::is_neq` (default method). -/
 abbrev is_neq (x y : FpVar F) : CS F (Boolean F) := EqGadget.is_neq (F := F) x y
 
+/-- `enforce_equal` is `conditional_enforce_equal` with `Boolean::TRUE`. -/
 @[simp] theorem EqGadget_enforce_equal (x y : FpVar F) :
     EqGadget.enforce_equal x y = conditional_enforce_equal x y Boolean.TRUE := rfl
 
+/-- `enforce_not_equal` is `conditional_enforce_not_equal` with `Boolean::TRUE`. -/
 @[simp] theorem EqGadget_enforce_not_equal (x y : FpVar F) :
     EqGadget.enforce_not_equal x y = conditional_enforce_not_equal x y Boolean.TRUE := rfl
 
-/-- Soundness of `conditional_enforce_equal` when `should_enforce` is one, except
-in the `(Constant, Constant)` case, where arkworks emits no constraint at all. -/
+/-- If the constraints hold and `should_enforce` is 1, then `x = y`. Excludes
+`(Constant, Constant)`, where arkworks emits no constraint. -/
 theorem conditional_enforce_equal_sound (x y : FpVar F) (b : Boolean F)
     (hc : ¬ (x.isConstant ∧ y.isConstant)) :
     Sound (conditional_enforce_equal x y b) fun a _ => b.eval a = 1 → x.eval a = y.eval a := by
@@ -484,8 +537,8 @@ theorem conditional_enforce_equal_sound (x y : FpVar F) (b : Boolean F)
   · simpa using (AllocatedFp.conditional_enforce_equal_sound _ _ _ k a h hb).symm
   · exact AllocatedFp.conditional_enforce_equal_sound _ _ _ k a h hb
 
-/-- Soundness of `conditional_enforce_not_equal` when `should_enforce` is one,
-except in the `(Constant, Constant)` case, where arkworks emits no constraint. -/
+/-- If the constraints hold and `should_enforce` is 1, then `x ≠ y`. Excludes
+`(Constant, Constant)`. -/
 theorem conditional_enforce_not_equal_sound (x y : FpVar F) (b : Boolean F)
     (hc : ¬ (x.isConstant ∧ y.isConstant)) :
     Sound (conditional_enforce_not_equal x y b) fun a _ => b.eval a = 1 → x.eval a ≠ y.eval a := by
@@ -496,23 +549,23 @@ theorem conditional_enforce_not_equal_sound (x y : FpVar F) (b : Boolean F)
   · simpa using (AllocatedFp.conditional_enforce_not_equal_sound _ _ _ k a h hb).symm
   · exact AllocatedFp.conditional_enforce_not_equal_sound _ _ _ k a h hb
 
-/-- Soundness of `enforce_equal`, except in the `(Constant, Constant)` case,
-where arkworks emits no constraint at all. -/
+/-- If the constraints hold, then `x = y`. Excludes `(Constant, Constant)`. -/
 theorem enforce_equal_sound (x y : FpVar F) (hc : ¬ (x.isConstant ∧ y.isConstant)) :
     Sound (EqGadget.enforce_equal x y) fun a _ => x.eval a = y.eval a :=
   fun k a h => conditional_enforce_equal_sound x y _ hc k a h (Boolean.eval_TRUE a)
 
-/-- Soundness of `enforce_not_equal`, except in the `(Constant, Constant)` case. -/
+/-- If the constraints hold, then `x ≠ y`. Excludes `(Constant, Constant)`. -/
 theorem enforce_not_equal_sound (x y : FpVar F) (hc : ¬ (x.isConstant ∧ y.isConstant)) :
     Sound (EqGadget.enforce_not_equal x y) fun a _ => x.eval a ≠ y.eval a :=
   fun k a h => conditional_enforce_not_equal_sound x y _ hc k a h (Boolean.eval_TRUE a)
 
+/-- `x.enforce_equal y` allocates no public inputs. -/
 theorem enforce_equal_inputs (x y : FpVar F) (k : Counters) :
     Op.inputs ((EqGadget.enforce_equal x y).run k).2 = [] := by
   cases x <;> cases y <;>
     simp [conditional_enforce_equal, AllocatedFp.conditional_enforce_equal, cs_run]
 
-/-- Soundness of `is_eq`: the returned bit is the indicator of equality. -/
+/-- If the constraints hold, the output is 1 when `x = y` and 0 otherwise. -/
 theorem is_eq_sound (x y : FpVar F) :
     Sound (EqGadget.is_eq (F := F) x y) fun a r =>
       r.eval a = if x.eval a = y.eval a then 1 else 0 := by
@@ -542,7 +595,7 @@ theorem is_eq_sound (x y : FpVar F) :
       exact if_congr eq_comm rfl rfl
     | Var v₂ => exact AllocatedFp.is_eq_sound v₁ v₂ k a h
 
-/-- Soundness of the default `is_neq` (`!is_eq`): the indicator of inequality. -/
+/-- If the constraints hold, the output is 0 when `x = y` and 1 otherwise. -/
 theorem is_neq_sound (x y : FpVar F) :
     Sound (EqGadget.is_neq (F := F) x y) fun a r =>
       r.eval a = if x.eval a = y.eval a then 0 else 1 := by

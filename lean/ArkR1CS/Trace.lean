@@ -17,7 +17,8 @@ namespace ArkR1CS
 
 variable {F : Type} [Field F]
 
-/-- Column index of a variable in arkworks' matrices. -/
+/-- The column of a variable in `ConstraintSystem::to_matrices`: `One ↦ 0`, `Instance i ↦ i`,
+`Witness j ↦ numInstance + j`. -/
 def Variable.column (numInstance : Nat) : Variable → Nat
   | .One => 0
   | .Instance i => i
@@ -28,12 +29,13 @@ def insertSorted (p : Nat × F) : List (Nat × F) → List (Nat × F)
   | [] => [p]
   | q :: rest => if p.1 ≤ q.1 then p :: q :: rest else q :: insertSorted p rest
 
-/-- Merge a coefficient into an association list. -/
+/-- Add a coefficient into an association list keyed by column. -/
 def mergeTerm [DecidableEq F] (p : Nat × F) : List (Nat × F) → List (Nat × F)
   | [] => [p]
   | q :: rest => if p.1 = q.1 then (q.1, q.2 + p.2) :: rest else q :: mergeTerm p rest
 
-/-- Compact a linear combination the way `make_row` does. -/
+/-- Compact a linear combination like `ConstraintSystem::make_row`: merge duplicate columns, sort
+by column, drop zero coefficients. -/
 def LinearCombination.canon [DecidableEq F] (numInstance : Nat) (lc : LinearCombination F) :
     List (Nat × F) :=
   let merged := lc.foldl (fun acc t => mergeTerm (t.2.column numInstance, t.1) acc) []
@@ -47,7 +49,7 @@ def renderLC [DecidableEq F] (showF : F → String) (numInstance : Nat) (lc : Li
   | [] => "-"
   | terms => " ".intercalate (terms.map fun p => s!"{p.1}:{showF p.2}")
 
-/-- Render rows `i: A | B | C`. -/
+/-- Render rows as `i: A | B | C`. -/
 def renderRows [DecidableEq F] (showF : F → String) (numInstance : Nat) :
     Nat → List (Constraint F) → List String
   | _, [] => []
@@ -55,8 +57,9 @@ def renderRows [DecidableEq F] (showF : F → String) (numInstance : Nat) :
     s!"{i}: {renderLC showF numInstance k.a} | {renderLC showF numInstance k.b} | {renderLC showF numInstance k.c}"
       :: renderRows showF numInstance (i + 1) rest
 
-/-- Canonical rendering of the trace of `ops`, run from a fresh constraint
-system. -/
+/-- Render the ops of a gadget run from `ConstraintSystem::new()` in the format of
+`ark_r1cs_trace::render_trace`: counts, instance and witness assignments, then the R1CS matrices
+row by row. -/
 def renderTrace [DecidableEq F] (showF : F → String) (ops : List (Op F)) : String :=
   let inputs := Op.inputs ops
   let witnesses := Op.witnesses ops
