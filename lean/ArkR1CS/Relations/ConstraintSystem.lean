@@ -215,6 +215,59 @@ attribute [cs_run] List.append_nil List.nil_append List.singleton_append List.co
   true_and Constraint.holds Op.inputCount Op.witnessCount Op.inputCount_append
   Op.witnessCount_append Nat.add_zero Nat.zero_add
 
+/-! ### Loops
+
+Since `CS` is a lawful monad, the loops of a Rust gadget (`try_from_fn`,
+`for` over an iterator with a mutable accumulator) can be written with
+`List.mapM` and `List.foldlM`. The two lemmas below lift a per-iteration
+soundness fact to the whole loop. -/
+
+namespace CS
+
+variable {α β σ τ : Type}
+
+variable [Field F]
+
+/-- If every iteration of `f` relates its input to its output by `P` whenever
+its rows hold, then so does `xs.mapM f`, element by element. -/
+theorem mapM_sound (f : α → CS F β) (P : α → β → Prop) (a : Assignment F)
+    (hf : ∀ x k, ConstraintsHold a ((f x).run k).2 → P x ((f x).run k).1) :
+    ∀ (xs : List α) (k : Counters), ConstraintsHold a ((xs.mapM f).run k).2 →
+      List.Forall₂ P xs ((xs.mapM f).run k).1
+  | [], _, _ => by simp
+  | x :: xs, k, h => by
+    simp only [List.mapM_cons, run_bind, run_pure, constraintsHold_append, cs_run] at h ⊢
+    exact .cons (hf x k h.1) (mapM_sound f P a hf xs _ h.2)
+
+/-- `mapM_sound` for a per-element value: if every iteration's output is
+abstracted by `g` to `e` of its input, `xs.mapM f` is abstracted to `xs.map e`. -/
+theorem mapM_map (f : α → CS F β) (g : β → τ) (e : α → τ) (a : Assignment F)
+    (hf : ∀ x k, ConstraintsHold a ((f x).run k).2 → g ((f x).run k).1 = e x) :
+    ∀ (xs : List α) (k : Counters), ConstraintsHold a ((xs.mapM f).run k).2 →
+      ((xs.mapM f).run k).1.map g = xs.map e
+  | [], _, _ => by simp
+  | x :: xs, k, h => by
+    simp only [List.mapM_cons, run_bind, run_pure, constraintsHold_append, cs_run] at h ⊢
+    rw [List.map_cons, List.map_cons, hf x k h.1, mapM_map f g e a hf xs _ h.2]
+
+/-- If every iteration of `f` maps an accumulator satisfying `I` and abstracted
+by `E` to one satisfying `I` and abstracted by `g`, then `xs.foldlM f` computes
+`xs.foldl g` on the abstraction. -/
+theorem foldlM_sound (f : σ → α → CS F σ) (I : σ → Prop) (E : σ → τ) (g : τ → α → τ)
+    (a : Assignment F)
+    (hf : ∀ s x k, I s → ConstraintsHold a ((f s x).run k).2 →
+      I ((f s x).run k).1 ∧ E ((f s x).run k).1 = g (E s) x) :
+    ∀ (xs : List α) (s : σ) (k : Counters), I s → ConstraintsHold a ((xs.foldlM f s).run k).2 →
+      I ((xs.foldlM f s).run k).1 ∧ E ((xs.foldlM f s).run k).1 = xs.foldl g (E s)
+  | [], _, _, hs, _ => by simpa using hs
+  | x :: xs, s, k, hs, h => by
+    simp only [List.foldlM_cons, run_bind, constraintsHold_append, List.foldl_cons] at h ⊢
+    obtain ⟨hI, hE⟩ := hf s x k hs h.1
+    rw [← hE]
+    exact foldlM_sound f I E g a hf xs _ _ hI h.2
+
+end CS
+
 /-! ### The honest assignment (executable checks only) -/
 
 /-- Overwrite the `i`-th instance variable. -/

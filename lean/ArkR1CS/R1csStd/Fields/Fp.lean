@@ -9,11 +9,14 @@ Mirrored method by method from `ark-r1cs-std` 0.6 (`src/fields/fp/mod.rs`):
 * `FpVar::{Constant, Var}` with the `impl_ops!` dispatch for `Add`, `Sub`,
   `Mul`, the `is_one()` / `is_zero()` shortcuts, and the `EqGadget`
   implementation (including `is_neq`, which is what `is_eq` is built from).
+* `From<Boolean>`, `Sum`, `CondSelectGadget`, `Boolean::le_bits_to_fp` and
+  `FpVar::to_bits_le_with_top_bits_zero`.
 
 Every operation that emits constraints has a soundness lemma stated for an
 arbitrary satisfying assignment.
 -/
 import ArkR1CS.R1csStd.Eq
+import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.LinearCombination
 
 -- `[DecidableEq F]` is needed by the `is_one()` / `is_zero()` shortcuts and by
@@ -21,6 +24,21 @@ import Mathlib.Tactic.LinearCombination
 set_option linter.unusedSectionVars false
 
 namespace ArkR1CS
+
+/-- `PrimeField::into_bigint`, read as a natural number. Only the prover's
+values depend on it (`to_bits_le_with_top_bits_zero`), never the constraints. -/
+class IntoBigInt (F : Type) where
+  into_bigint : F → Nat
+
+instance (n : Nat) : IntoBigInt (ZMod n) := ⟨ZMod.val⟩
+
+/-- The value of little-endian bits `xs`: `∑ xs[i] * 2^i`. -/
+def leBitsValue {F : Type} [Field F] (xs : List F) : F := xs.foldr (fun x acc => x + 2 * acc) 0
+
+@[simp, cs_eval] theorem leBitsValue_nil {F : Type} [Field F] : leBitsValue ([] : List F) = 0 := rfl
+
+@[simp, cs_eval] theorem leBitsValue_cons {F : Type} [Field F] (x : F) (xs : List F) :
+    leBitsValue (x :: xs) = x + 2 * leBitsValue xs := rfl
 
 variable {F : Type} [Field F] [DecidableEq F]
 
@@ -568,6 +586,234 @@ theorem is_neq_sound (x y : FpVar F) (k : Counters) (a : Assignment F)
   simp only [EqGadget.is_neq, cs_run] at h ⊢
   rw [Boolean.eval_not, is_eq_sound x y k a h]
   split_ifs <;> simp
+
+/-! ### Conversion from `Boolean`, sums, selection -/
+
+/-- `impl From<Boolean<F>> for FpVar<F>`. -/
+def ofBoolean : Boolean F → FpVar F
+  | .Constant b => Constant (if b then 1 else 0)
+  | .Var v => Var (AllocatedFp.new (if v.value then 1 else 0) v.lc)
+
+@[simp, cs_eval] theorem eval_ofBoolean (a : Assignment F) (b : Boolean F) :
+    (ofBoolean b).eval a = b.eval a := by
+  cases b <;> simp [ofBoolean, AllocatedFp.eval]
+
+/-- `impl Mul<F> for FpVar`: zero when `other.is_zero()`, otherwise
+`self * FpVar::Constant(other)`, which emits no constraints. -/
+def mul_by_constant (x : FpVar F) (c : F) : FpVar F :=
+  if c = 0 then zero else
+    match x with
+    | Constant c' => Constant (c' * c)
+    | Var v => Var (v.mul_constant c)
+
+@[simp, cs_eval] theorem eval_mul_by_constant (a : Assignment F) (x : FpVar F) (c : F) :
+    (x.mul_by_constant c).eval a = x.eval a * c := by
+  unfold mul_by_constant
+  split_ifs with h
+  · simp [h]
+  · cases x <;> simp
+
+/-- `AllocatedFp::add_many` on a non-empty list: one linear combination, no
+constraints. -/
+def _root_.ArkR1CS.AllocatedFp.add_many (xs : List (AllocatedFp F)) : AllocatedFp F :=
+  AllocatedFp.new (xs.map (·.value)).sum (xs.flatMap (·.lc))
+
+theorem _root_.ArkR1CS.AllocatedFp.eval_add_many (a : Assignment F) (xs : List (AllocatedFp F)) :
+    (AllocatedFp.add_many xs).eval a = (xs.map (·.eval a)).sum := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [AllocatedFp.add_many, AllocatedFp.eval_new, List.flatMap_cons,
+      LinearCombination.eval_append, List.map_cons, List.sum_cons] at ih ⊢
+    rw [ih]; rfl
+
+/-- The constant part of a sum. -/
+def constPart : FpVar F → F
+  | Constant c => c
+  | Var _ => 0
+
+/-- The variable part of a sum. -/
+def varPart : FpVar F → Option (AllocatedFp F)
+  | Constant _ => none
+  | Var v => some v
+
+/-- `impl Sum for FpVar`: the constants are added up apart, and the variables
+joined by `AllocatedFp::add_many`. -/
+def sum (xs : List (FpVar F)) : FpVar F :=
+  match xs.filterMap varPart with
+  | [] => Constant (xs.map constPart).sum
+  | vs => (Var (AllocatedFp.add_many vs)).add (Constant (xs.map constPart).sum)
+
+@[simp, cs_eval] theorem eval_sum (a : Assignment F) (xs : List (FpVar F)) :
+    (sum xs).eval a = (xs.map (·.eval a)).sum := by
+  have split : (xs.map (·.eval a)).sum =
+      ((xs.filterMap varPart).map (·.eval a)).sum + (xs.map constPart).sum := by
+    induction xs with
+    | nil => simp
+    | cons x xs ih =>
+      cases x <;> simp [varPart, constPart, List.filterMap_cons, ih] <;> ring
+  rw [split, sum]
+  split
+  · next h => simp [h]
+  · simp [AllocatedFp.eval_add_many]
+
+/-- `AllocatedFp::conditionally_select`: allocates the result and enforces
+`cond * (true_val - false_val) = result - false_val`. -/
+def _root_.ArkR1CS.AllocatedFp.conditionally_select (cond : Boolean F)
+    (t f : AllocatedFp F) : CS F (AllocatedFp F) :=
+  match cond with
+  | .Constant true => pure t
+  | .Constant false => pure f
+  | .Var _ => do
+    let result ← AllocatedFp.new_witness (if cond.value then t.value else f.value)
+    enforce_r1cs_constraint cond.lc (LinearCombination.diff t.lc f.lc)
+      (LinearCombination.diff result.lc f.lc)
+    pure result
+
+/-- `AllocatedFp::from(Boolean)`. -/
+def _root_.ArkR1CS.AllocatedFp.ofBoolean (b : Boolean F) : AllocatedFp F :=
+  AllocatedFp.new (if b.value then 1 else 0) b.lc
+
+/-- An `FpVar` as an `AllocatedFp`, constants through `AllocatedFp::new_constant`. -/
+def toAllocated : FpVar F → AllocatedFp F
+  | Constant c => AllocatedFp.new_constant c
+  | Var v => v
+
+@[simp, cs_eval] theorem eval_toAllocated (a : Assignment F) (x : FpVar F) :
+    x.toAllocated.eval a = x.eval a := by
+  cases x <;> simp [toAllocated]
+
+/-- `FpVar::conditionally_select` (what `Boolean::select` calls). -/
+def conditionally_select (cond : Boolean F) (t f : FpVar F) : CS F (FpVar F) :=
+  match cond, t, f with
+  | .Constant true, t, _ => pure t
+  | .Constant false, _, f => pure f
+  | cond, Constant ct, Constant cf =>
+    let is := AllocatedFp.ofBoolean cond
+    let not := AllocatedFp.ofBoolean cond.not
+    pure (Var ((is.mul_constant ct).add (not.mul_constant cf)))
+  | cond, t, f => do
+    let r ← AllocatedFp.conditionally_select cond t.toAllocated f.toAllocated
+    pure (Var r)
+
+theorem _root_.ArkR1CS.AllocatedFp.eval_ofBoolean (a : Assignment F) (b : Boolean F) :
+    (AllocatedFp.ofBoolean b).eval a = b.eval a := rfl
+
+theorem _root_.ArkR1CS.AllocatedFp.conditionally_select_sound (c : AllocatedBool F)
+    (t f : AllocatedFp F) (k : Counters) (a : Assignment F)
+    (h : ConstraintsHold a ((AllocatedFp.conditionally_select (.Var c) t f).run k).2) :
+    ((AllocatedFp.conditionally_select (.Var c) t f).run k).1.eval a =
+      f.eval a + c.lc.eval a * (t.eval a - f.eval a) := by
+  simp only [AllocatedFp.conditionally_select, cs_run] at h ⊢
+  simp only [AllocatedFp.eval, Boolean.lc, cs_eval] at h ⊢
+  linear_combination -h
+
+/-- Soundness of `conditionally_select`: `false_val + cond * (true_val - false_val)`,
+which is `true_val` or `false_val` when `cond` is a bit. -/
+theorem conditionally_select_sound (cond : Boolean F) (t f : FpVar F) (k : Counters)
+    (a : Assignment F) (h : ConstraintsHold a ((conditionally_select cond t f).run k).2) :
+    ((conditionally_select cond t f).run k).1.eval a =
+      f.eval a + cond.eval a * (t.eval a - f.eval a) := by
+  rcases cond with (_ | _) | c
+  · simp [conditionally_select]
+  · simp [conditionally_select]
+  · have key := fun t f => AllocatedFp.conditionally_select_sound c t f k a
+    cases t <;> cases f <;> simp only [conditionally_select, cs_run] at h key ⊢
+    · simp [AllocatedFp.eval_ofBoolean]; ring
+    all_goals rw [eval_Var, key _ _ h]; simp
+
+/-! ### Bits -/
+
+/-- `Boolean::is_constant()`. -/
+def _root_.ArkR1CS.Boolean.is_constant : Boolean F → Bool
+  | .Constant _ => true
+  | .Var _ => false
+
+/-- The summands of `Boolean::le_bits_to_fp`: each bit times its power of two,
+the power doubled in place after each bit. -/
+def le_bits_terms : F → List (Boolean F) → List (FpVar F)
+  | _, [] => []
+  | power, b :: bs => (ofBoolean b).mul_by_constant power :: le_bits_terms (power + power) bs
+
+/-- `Boolean::le_bits_to_fp`, for fewer bits than `F::MODULUS_BIT_SIZE` (so
+without `enforce_in_field_le`): no constraints. -/
+def _root_.ArkR1CS.Boolean.le_bits_to_fp (bits : List (Boolean F)) : FpVar F :=
+  if bits.all Boolean.is_constant then
+    Constant (leBitsValue (bits.map fun b => if b.value then 1 else 0))
+  else
+    sum (le_bits_terms 1 bits)
+
+theorem eval_le_bits_terms (a : Assignment F) (power : F) (bits : List (Boolean F)) :
+    ((le_bits_terms power bits).map (·.eval a)).sum = power * leBitsValue (bits.map (·.eval a)) := by
+  induction bits generalizing power with
+  | nil => simp [le_bits_terms]
+  | cons b bs ih => simp [le_bits_terms, ih]; ring
+
+@[simp, cs_eval] theorem _root_.ArkR1CS.Boolean.eval_le_bits_to_fp (a : Assignment F)
+    (bits : List (Boolean F)) :
+    (Boolean.le_bits_to_fp bits).eval a = leBitsValue (bits.map (·.eval a)) := by
+  unfold Boolean.le_bits_to_fp
+  split_ifs with h
+  · simp only [eval_Constant]
+    congr 1
+    apply List.map_congr_left
+    intro b hb
+    have := List.all_eq_true.mp h b hb
+    rcases b with b | v
+    · cases b <;> simp [Boolean.value]
+    · simp [Boolean.is_constant] at this
+  · simp [eval_le_bits_terms]
+
+private theorem not_isConstant_sub (v : AllocatedFp F) (y : FpVar F) :
+    ¬ (((Var v).sub y).isConstant ∧ (zero : FpVar F).isConstant) := fun ⟨h, _⟩ => by
+  cases y <;> simp [sub, isConstant] at h
+
+omit [Field F] [DecidableEq F] in
+private theorem forall₂_forall_mem_right {α β : Type} {P : β → Prop} :
+    ∀ {xs : List α} {ys : List β}, List.Forall₂ (fun _ y => P y) xs ys → ∀ y ∈ ys, P y
+  | _, _, .nil => by simp
+  | _, _, .cons hp hs => by
+    intro y hy
+    rcases List.mem_cons.mp hy with rfl | hy
+    · exact hp
+    · exact forall₂_forall_mem_right hs y hy
+
+/-- `FpVar::to_bits_le_with_top_bits_zero(size)`: `size` boolean-checked bits
+whose value is enforced to be `self`, i.e. `self < 2^size`. -/
+def to_bits_le_with_top_bits_zero [IntoBigInt F] (x : FpVar F) (size : Nat) :
+    CS F (List (Boolean F) × FpVar F) := do
+  let v := IntoBigInt.into_bigint x.value
+  let lower_bits ← (List.range size).mapM fun i =>
+    match x with
+    | Constant _ => pure (Boolean.new_constant (v.testBit i))
+    | Var _ => Boolean.new_witness (v.testBit i)
+  let lower_bits_fp := Boolean.le_bits_to_fp lower_bits
+  let rest := x.sub lower_bits_fp
+  EqGadget.enforce_equal rest zero
+  pure (lower_bits, rest)
+
+/-- Soundness of `to_bits_le_with_top_bits_zero` on a variable (on a constant,
+arkworks emits no constraint): `size` bits, each `0` or `1`, whose value is
+`self`. -/
+theorem to_bits_le_with_top_bits_zero_sound [IntoBigInt F] (x : FpVar F) (hx : ¬ x.isConstant)
+    (size : Nat) (k : Counters) (a : Assignment F)
+    (h : ConstraintsHold a ((x.to_bits_le_with_top_bits_zero size).run k).2) :
+    let bits := ((x.to_bits_le_with_top_bits_zero size).run k).1.1
+    bits.length = size ∧ (∀ b ∈ bits, b.eval a = 0 ∨ b.eval a = 1) ∧
+      x.eval a = leBitsValue (bits.map (·.eval a)) := by
+  cases x with
+  | Constant c => exact absurd trivial hx
+  | Var v =>
+    simp only [to_bits_le_with_top_bits_zero, CS.run_bind, CS.run_pure,
+      constraintsHold_append, constraintsHold_nil, and_true] at h ⊢
+    obtain ⟨hbits, heq⟩ := h
+    have hall := CS.mapM_sound _ (fun _ b => b.eval a = 0 ∨ b.eval a = 1) a
+      (fun i k' h' => Boolean.new_witness_sound _ k' a h') _ _ hbits
+    refine ⟨by simpa using hall.length_eq.symm, ?_, ?_⟩
+    · exact forall₂_forall_mem_right hall
+    · have := enforce_equal_sound _ zero (not_isConstant_sub v _) _ a heq
+      simp only [eval_sub, eval_zero, sub_eq_zero] at this
+      simpa using this
 
 end FpVar
 
