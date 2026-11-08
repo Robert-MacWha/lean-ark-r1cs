@@ -5,7 +5,8 @@ A gadget is a function of the constraint system it synthesises into. Here the
 constraint system is represented by its allocation counters (`Counters`,
 threaded like a `ConstraintSystemRef`) and the list of operations the gadget
 performs on it (`Op`): allocating an instance variable, allocating a witness
-variable, or enforcing one R1CS row. `CS F α` is the resulting monad.
+variable, or enforcing one R1CS row. `CS F α` is `StateT Counters` over a
+writer of those operations.
 
 Soundness is stated against *arbitrary* assignments (`ConstraintsHold`): no
 assumption is made about how the prover produced them. The honest
@@ -13,6 +14,7 @@ assignment (`honestAssignment`) is only used by the executable
 `isSatisfied` check and by `ArkR1CS.Trace`.
 -/
 import ArkR1CS.Relations.Variable
+import Mathlib.Control.Monad.Writer
 
 namespace ArkR1CS
 
@@ -75,79 +77,72 @@ structure Counters where
 /-- `ConstraintSystem::new()`: the constant one is instance variable 0. -/
 def Counters.new : Counters := ⟨1, 0⟩
 
-/-- Counters after performing `ops`. -/
-def Counters.advance (c : Counters) (ops : List (Op F)) : Counters :=
-  ⟨c.num_instance_variables + (Op.inputs ops).length,
-    c.num_witness_variables + (Op.witnesses ops).length⟩
-
-@[simp, cs_run] theorem Counters.advance_nil (c : Counters) : c.advance ([] : List (Op F)) = c := by
-  simp [Counters.advance, Op.inputs, Op.witnesses]
-
-theorem Counters.advance_append (c : Counters) (l₁ l₂ : List (Op F)) :
-    c.advance (l₁ ++ l₂) = (c.advance l₁).advance l₂ := by
-  simp [Counters.advance, Op.inputs, Op.witnesses, Nat.add_assoc]
-
-@[simp, cs_run] theorem Counters.advance_num_instance_variables (c : Counters) (ops : List (Op F)) :
-    (c.advance ops).num_instance_variables = c.num_instance_variables + (Op.inputs ops).length :=
-    rfl
-
-@[simp, cs_run] theorem Counters.advance_num_witness_variables (c : Counters) (ops : List (Op F)) :
-    (c.advance ops).num_witness_variables = c.num_witness_variables + (Op.witnesses ops).length :=
-    rfl
-
 /-! ### Gadgets as computations on the constraint system -/
 
-/-- A gadget: given the current counters, its output and the operations it
-performs. `bind` threads the counters like a `ConstraintSystemRef`. -/
-structure CS (F : Type) (α : Type) where
-  run : Counters → α × List (Op F)
+/-- `do`-notation, `mapM`, `forM`, … behave as expected (needed by the
+`List.mapM` / `List.forM` lemmas when a gadget loops over a list). Mathlib
+only provides this for monoids, which `List` is not. -/
+instance : LawfulMonad (Writer (List (Op F))) := LawfulMonad.mk'
+  (id_map := fun _ => rfl)
+  (pure_bind := fun _ _ => by
+    show (fun p : _ × _ => (p.1, [] ++ p.2)) _ = _; simp; rfl)
+  (bind_assoc := fun x _ _ => by
+    obtain ⟨a, w⟩ := x
+    show (_, _) = (_, _); simp)
+  (bind_pure_comp := fun _ x => by
+    obtain ⟨a, w⟩ := x
+    show (_, _) = (_, _); simp)
+
+/-- A gadget: threads the counters like a `ConstraintSystemRef` and logs the
+operations it performs. -/
+abbrev CS (F : Type) := StateT Counters (Writer (List (Op F)))
 
 namespace CS
 
 variable {α β : Type}
 
-protected def pure (x : α) : CS F α := ⟨fun _ => (x, [])⟩
+/-- The gadget's output and the operations it performs, from counters `k`. -/
+def run (c : CS F α) (k : Counters) : α × List (Op F) :=
+  let r := (StateT.run c k).run
+  (r.1.1, r.2)
 
-protected def bind (c : CS F α) (f : α → CS F β) : CS F β :=
-  ⟨fun k =>
-    let r := c.run k
-    let s := (f r.1).run (k.advance r.2)
-    (s.1, r.2 ++ s.2)⟩
-
-instance : Monad (CS F) where
-  pure := CS.pure
-  bind := CS.bind
-
-@[ext] theorem ext {c d : CS F α} (h : ∀ k, c.run k = d.run k) : c = d := by
-  cases c; cases d; congr; funext k; exact h k
+/-- The counters after the gadget. -/
+def next (c : CS F α) (k : Counters) : Counters := (StateT.run c k).run.1.2
 
 @[simp, cs_run] theorem run_pure (x : α) (k : Counters) : (pure x : CS F α).run k = (x, []) := rfl
 
+@[simp, cs_run] theorem next_pure (x : α) (k : Counters) : (pure x : CS F α).next k = k := rfl
+
 @[simp, cs_run] theorem run_bind (c : CS F α) (f : α → CS F β) (k : Counters) :
     (c >>= f).run k =
-      (((f (c.run k).1).run (k.advance (c.run k).2)).1,
-        (c.run k).2 ++ ((f (c.run k).1).run (k.advance (c.run k).2)).2) := rfl
+      (((f (c.run k).1).run (c.next k)).1, (c.run k).2 ++ ((f (c.run k).1).run (c.next k)).2) :=
+  rfl
+
+@[simp, cs_run] theorem next_bind (c : CS F α) (f : α → CS F β) (k : Counters) :
+    (c >>= f).next k = (f (c.run k).1).next (c.next k) := rfl
 
 @[simp, cs_run] theorem run_map (f : α → β) (c : CS F α) (k : Counters) :
     (f <$> c).run k = (f (c.run k).1, (c.run k).2) :=
-  Prod.ext rfl (List.append_nil (c.run k).2)
+  Prod.ext rfl (List.append_nil _)
 
-/-- `do`-notation, `mapM`, `forM`, … behave as expected (needed by the
-`List.mapM` / `List.forM` lemmas when a gadget loops over a list). -/
-instance : LawfulMonad (CS F) := LawfulMonad.mk'
-  (id_map := fun x => CS.ext fun k => by simp [run_map])
-  (pure_bind := fun x f => CS.ext fun k => by simp [run_bind, run_pure])
-  (bind_assoc := fun x f g => CS.ext fun k => by simp [run_bind, Counters.advance_append])
+@[simp, cs_run] theorem next_map (f : α → β) (c : CS F α) (k : Counters) :
+    (f <$> c).next k = c.next k := rfl
 
 end CS
 
 /-- `ConstraintSystemRef::new_input_variable`. -/
-def new_input_variable (v : F) : CS F Variable :=
-  ⟨fun k => (.Instance k.num_instance_variables, [.input v])⟩
+def new_input_variable (v : F) : CS F Variable := do
+  let k ← get
+  set { k with num_instance_variables := k.num_instance_variables + 1 }
+  tell [.input v]
+  pure (.Instance k.num_instance_variables)
 
 /-- `ConstraintSystemRef::new_witness_variable`. -/
-def new_witness_variable (v : F) : CS F Variable :=
-  ⟨fun k => (.Witness k.num_witness_variables, [.witness v])⟩
+def new_witness_variable (v : F) : CS F Variable := do
+  let k ← get
+  set { k with num_witness_variables := k.num_witness_variables + 1 }
+  tell [.witness v]
+  pure (.Witness k.num_witness_variables)
 
 /-- `ConstraintSystemRef::new_lc`: symbolic linear combinations are inlined,
 so this allocates nothing. -/
@@ -155,7 +150,7 @@ def new_lc (lc : LinearCombination F) : CS F (LinearCombination F) := pure lc
 
 /-- `ConstraintSystemRef::enforce_r1cs_constraint`. -/
 def enforce_r1cs_constraint (a b c : LinearCombination F) : CS F Unit :=
-  ⟨fun _ => ((), [.constrain ⟨a, b, c⟩])⟩
+  tell [.constrain ⟨a, b, c⟩]
 
 @[simp, cs_run] theorem run_new_input_variable (v : F) (k : Counters) :
     (new_input_variable v).run k = (.Instance k.num_instance_variables, [.input v]) := rfl
@@ -168,6 +163,20 @@ def enforce_r1cs_constraint (a b c : LinearCombination F) : CS F Unit :=
 
 @[simp, cs_run] theorem run_enforce_r1cs_constraint (a b c : LinearCombination F) (k : Counters) :
     (enforce_r1cs_constraint a b c).run k = ((), [.constrain ⟨a, b, c⟩]) := rfl
+
+@[simp, cs_run] theorem next_new_input_variable (v : F) (k : Counters) :
+    (new_input_variable v).next k =
+      { k with num_instance_variables := k.num_instance_variables + 1 } := rfl
+
+@[simp, cs_run] theorem next_new_witness_variable (v : F) (k : Counters) :
+    (new_witness_variable v).next k =
+      { k with num_witness_variables := k.num_witness_variables + 1 } := rfl
+
+@[simp, cs_run] theorem next_new_lc (lc : LinearCombination F) (k : Counters) :
+    (new_lc lc).next k = k := rfl
+
+@[simp, cs_run] theorem next_enforce_r1cs_constraint (a b c : LinearCombination F) (k : Counters) :
+    (enforce_r1cs_constraint a b c).next k = k := rfl
 
 /-! ### Satisfaction by an arbitrary assignment -/
 
