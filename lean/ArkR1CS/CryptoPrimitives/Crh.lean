@@ -20,9 +20,7 @@ structure CRHSchemeGadget (F : Type) [Field F] [DecidableEq F] where
   evaluate_native : List F → F
   /-- `CRHSchemeGadget::evaluate`. -/
   evaluate : List (FpVar F) → CS F (FpVar F)
-  sound : ∀ (xs : List (FpVar F)) (k : Counters) (a : Assignment F),
-    ConstraintsHold a ((evaluate xs).run k).2 →
-      ((evaluate xs).run k).1.eval a = evaluate_native (xs.map (·.eval a))
-  noInputs : ∀ (xs : List (FpVar F)) (k : Counters), Op.inputCount ((evaluate xs).run k).2 = 0
+  sound : ∀ xs, Sound (evaluate xs) fun a r => r.eval a = evaluate_native (xs.map (·.eval a))
+  noInputs : ∀ xs k, Op.inputs ((evaluate xs).run k).2 = []
 
 end ArkR1CS

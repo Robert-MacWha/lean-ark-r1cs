@@ -15,10 +15,10 @@ set_option linter.unnecessarySeqFocus false
 
 namespace ArkR1CS
 
-/-- `Variable`: the constant zero, the constant one (instance variable 0),
-the `i`-th instance (public input) variable, or the `i`-th witness. -/
+/-- `Variable`: the constant one (instance variable 0), the `i`-th instance
+(public input) variable, or the `i`-th witness. `Variable::Zero` is never
+produced by the modelled gadgets (`lc!()` is the empty list). -/
 inductive Variable
-  | Zero
   | One
   | Instance (i : Nat)
   | Witness (i : Nat)
@@ -34,12 +34,10 @@ variable {F : Type}
 
 /-- Value of a variable under an assignment. -/
 def Variable.eval [Field F] (a : Assignment F) : Variable → F
-  | .Zero => 0
   | .One => 1
   | .Instance i => a.instance_assignment i
   | .Witness i => a.witness_assignment i
 
-@[simp, cs_eval] theorem Variable.eval_Zero [Field F] (a : Assignment F) : Variable.eval a .Zero = 0 := rfl
 @[simp, cs_eval] theorem Variable.eval_One [Field F] (a : Assignment F) : Variable.eval a .One = 1 := rfl
 @[simp, cs_eval] theorem Variable.eval_Instance [Field F] (a : Assignment F) (i : Nat) :
     Variable.eval a (.Instance i) = a.instance_assignment i := rfl

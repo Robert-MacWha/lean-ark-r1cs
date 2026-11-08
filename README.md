@@ -16,7 +16,7 @@ subDir = "lean"
 rev = "main"
 ```
 
-Write the gadget in `CS F` with the `FpVar` operations, keeping the structure of the Rust, then prove its soundness lemma from the lemmas of the operations it uses. The `cs_run` simp set unfolds a gadget's run into the constraints of each step, and `cs_eval` evaluates variables and linear combinations:
+Write the gadget in `CS F` with the `FpVar` operations, keeping the structure of the Rust, then prove its soundness lemma, `Sound gadget spec`, from the lemmas of the operations it uses. `Sound c P` says that every assignment satisfying the constraints `c` emits satisfies `P` of its output. The `cs_run` simp set unfolds a gadget's run into the constraints of each step, and `cs_eval` evaluates variables and linear combinations:
 
 ```lean
 import ArkR1CS
@@ -26,9 +26,9 @@ def squarePlusOne {F : Type} [Field F] [DecidableEq F] (x : FpVar F) : CS F (FpV
   let sq ← x.square
   pure (sq + FpVar.one)
 
-theorem squarePlusOne_sound {F : Type} [Field F] [DecidableEq F] (x : FpVar F) (k : Counters)
-    (a : Assignment F) (h : ConstraintsHold a ((squarePlusOne x).run k).2) :
-    ((squarePlusOne x).run k).1.eval a = x.eval a * x.eval a + 1 := by
+theorem squarePlusOne_sound {F : Type} [Field F] [DecidableEq F] (x : FpVar F) :
+    Sound (squarePlusOne x) fun a r => r.eval a = x.eval a * x.eval a + 1 := by
+  intro k a h
   simp only [squarePlusOne, cs_run] at h ⊢
   rw [FpVar.eval_hAdd, FpVar.square_sound x k a h, FpVar.eval_one]
 ```

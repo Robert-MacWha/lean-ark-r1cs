@@ -13,7 +13,6 @@ assignment (`honestAssignment`) is only used by the executable
 `isSatisfied` check and by `ArkR1CS.Trace`.
 -/
 import ArkR1CS.Relations.Variable
-import Mathlib.Logic.Function.Basic
 
 namespace ArkR1CS
 
@@ -40,44 +39,29 @@ inductive Op (F : Type)
 
 namespace Op
 
-/-- Number of instance variables allocated. -/
-def inputCount : List (Op F) → Nat
-  | [] => 0
-  | .input _ :: rest => inputCount rest + 1
-  | .witness _ :: rest => inputCount rest
-  | .constrain _ :: rest => inputCount rest
+/-- The value of an `input` op. -/
+@[cs_run] def input? : Op F → Option F
+  | .input v => some v
+  | _ => none
 
-/-- Number of witness variables allocated. -/
-def witnessCount : List (Op F) → Nat
-  | [] => 0
-  | .input _ :: rest => witnessCount rest
-  | .witness _ :: rest => witnessCount rest + 1
-  | .constrain _ :: rest => witnessCount rest
+/-- The value of a `witness` op. -/
+@[cs_run] def witness? : Op F → Option F
+  | .witness v => some v
+  | _ => none
+
+/-- The row of a `constrain` op. -/
+@[cs_run] def constraint? : Op F → Option (Constraint F)
+  | .constrain k => some k
+  | _ => none
+
+/-- Values of the instance variables allocated, in order. -/
+def inputs (ops : List (Op F)) : List F := ops.filterMap input?
+
+/-- Values of the witness variables allocated, in order. -/
+def witnesses (ops : List (Op F)) : List F := ops.filterMap witness?
 
 /-- The R1CS rows, in order. -/
-def constraints : List (Op F) → List (Constraint F)
-  | [] => []
-  | .input _ :: rest => constraints rest
-  | .witness _ :: rest => constraints rest
-  | .constrain k :: rest => k :: constraints rest
-
-theorem inputCount_append (l₁ l₂ : List (Op F)) :
-    inputCount (l₁ ++ l₂) = inputCount l₁ + inputCount l₂ := by
-  induction l₁ with
-  | nil => simp [inputCount]
-  | cons op rest ih => cases op <;> simp [inputCount, ih, Nat.add_right_comm]
-
-theorem witnessCount_append (l₁ l₂ : List (Op F)) :
-    witnessCount (l₁ ++ l₂) = witnessCount l₁ + witnessCount l₂ := by
-  induction l₁ with
-  | nil => simp [witnessCount]
-  | cons op rest ih => cases op <;> simp [witnessCount, ih, Nat.add_right_comm]
-
-theorem constraints_append (l₁ l₂ : List (Op F)) :
-    constraints (l₁ ++ l₂) = constraints l₁ ++ constraints l₂ := by
-  induction l₁ with
-  | nil => rfl
-  | cons op rest ih => cases op <;> simp [constraints, ih]
+def constraints (ops : List (Op F)) : List (Constraint F) := ops.filterMap constraint?
 
 end Op
 
@@ -93,20 +77,23 @@ def Counters.new : Counters := ⟨1, 0⟩
 
 /-- Counters after performing `ops`. -/
 def Counters.advance (c : Counters) (ops : List (Op F)) : Counters :=
-  ⟨c.num_instance_variables + Op.inputCount ops, c.num_witness_variables + Op.witnessCount ops⟩
+  ⟨c.num_instance_variables + (Op.inputs ops).length,
+    c.num_witness_variables + (Op.witnesses ops).length⟩
 
 @[simp, cs_run] theorem Counters.advance_nil (c : Counters) : c.advance ([] : List (Op F)) = c := by
-  simp [Counters.advance, Op.inputCount, Op.witnessCount]
+  simp [Counters.advance, Op.inputs, Op.witnesses]
 
 theorem Counters.advance_append (c : Counters) (l₁ l₂ : List (Op F)) :
     c.advance (l₁ ++ l₂) = (c.advance l₁).advance l₂ := by
-  simp [Counters.advance, Op.inputCount_append, Op.witnessCount_append, Nat.add_assoc]
+  simp [Counters.advance, Op.inputs, Op.witnesses, Nat.add_assoc]
 
 @[simp, cs_run] theorem Counters.advance_num_instance_variables (c : Counters) (ops : List (Op F)) :
-    (c.advance ops).num_instance_variables = c.num_instance_variables + Op.inputCount ops := rfl
+    (c.advance ops).num_instance_variables = c.num_instance_variables + (Op.inputs ops).length :=
+    rfl
 
 @[simp, cs_run] theorem Counters.advance_num_witness_variables (c : Counters) (ops : List (Op F)) :
-    (c.advance ops).num_witness_variables = c.num_witness_variables + Op.witnessCount ops := rfl
+    (c.advance ops).num_witness_variables = c.num_witness_variables + (Op.witnesses ops).length :=
+    rfl
 
 /-! ### Gadgets as computations on the constraint system -/
 
@@ -195,51 +182,41 @@ variable [Field F]
   simp [ConstraintsHold, Op.constraints]
 
 @[simp, cs_run] theorem constraintsHold_input (a : Assignment F) (v : F) (rest : List (Op F)) :
-    ConstraintsHold a (.input v :: rest) ↔ ConstraintsHold a rest := Iff.rfl
+    ConstraintsHold a (.input v :: rest) ↔ ConstraintsHold a rest := by
+  simp [ConstraintsHold, Op.constraints, Op.constraint?]
 
 @[simp, cs_run] theorem constraintsHold_witness (a : Assignment F) (v : F) (rest : List (Op F)) :
-    ConstraintsHold a (.witness v :: rest) ↔ ConstraintsHold a rest := Iff.rfl
+    ConstraintsHold a (.witness v :: rest) ↔ ConstraintsHold a rest := by
+  simp [ConstraintsHold, Op.constraints, Op.constraint?]
 
 @[simp, cs_run] theorem constraintsHold_constrain (a : Assignment F) (k : Constraint F)
     (rest : List (Op F)) :
     ConstraintsHold a (.constrain k :: rest) ↔ k.holds a ∧ ConstraintsHold a rest := by
-  simp [ConstraintsHold, Op.constraints]
+  simp [ConstraintsHold, Op.constraints, Op.constraint?]
 
 @[simp, cs_run] theorem constraintsHold_append (a : Assignment F) (l₁ l₂ : List (Op F)) :
     ConstraintsHold a (l₁ ++ l₂) ↔ ConstraintsHold a l₁ ∧ ConstraintsHold a l₂ := by
-  simp [ConstraintsHold, Op.constraints_append, or_imp, forall_and]
+  simp [ConstraintsHold, Op.constraints, or_imp, forall_and]
+
+/-- Soundness of a gadget against `P`: from any counters, every assignment
+satisfying the rows the gadget emits satisfies `P` of the gadget's output. -/
+abbrev Sound {α : Type} (c : CS F α) (P : Assignment F → α → Prop) : Prop :=
+  ∀ (k : Counters) (a : Assignment F), ConstraintsHold a (c.run k).2 → P a (c.run k).1
 
 end
 
 attribute [cs_run] List.append_nil List.nil_append List.singleton_append List.cons_append and_true
-  true_and Constraint.holds Op.inputCount Op.witnessCount Op.inputCount_append
-  Op.witnessCount_append Nat.add_zero Nat.zero_add
+  true_and Constraint.holds Op.inputs Op.witnesses List.filterMap_nil List.filterMap_cons
+  List.filterMap_append List.length_nil List.length_cons List.length_append Nat.add_zero
+  Nat.zero_add
 
 /-! ### The honest assignment (executable checks only) -/
 
-/-- Overwrite the `i`-th instance variable. -/
-def Assignment.setInstance (a : Assignment F) (i : Nat) (v : F) : Assignment F :=
-  { a with instance_assignment := Function.update a.instance_assignment i v }
-
-/-- Overwrite the `i`-th witness variable. -/
-def Assignment.setWitness (a : Assignment F) (i : Nat) (v : F) : Assignment F :=
-  { a with witness_assignment := Function.update a.witness_assignment i v }
-
-/-- The assignment the prover builds while synthesising: every allocated
-variable receives the value its allocation closure returned. -/
-def extend (k : Counters) (a : Assignment F) : List (Op F) → Assignment F
-  | [] => a
-  | .input v :: rest =>
-    extend ⟨k.num_instance_variables + 1, k.num_witness_variables⟩
-      (a.setInstance k.num_instance_variables v) rest
-  | .witness v :: rest =>
-    extend ⟨k.num_instance_variables, k.num_witness_variables + 1⟩
-      (a.setWitness k.num_witness_variables v) rest
-  | .constrain _ :: rest => extend k a rest
-
-/-- The prover's assignment for a gadget run from a fresh constraint system. -/
+/-- The assignment the prover builds while synthesising from a fresh
+constraint system: every allocated variable receives the value its allocation
+closure returned, and instance variable 0 is the constant one. -/
 def honestAssignment [Field F] (ops : List (Op F)) : Assignment F :=
-  extend Counters.new ⟨fun _ => 0, fun _ => 0⟩ ops
+  ⟨fun i => (1 :: Op.inputs ops).getD i 0, fun j => (Op.witnesses ops).getD j 0⟩
 
 /-- `ConstraintSystemRef::is_satisfied` for the prover's own assignment. -/
 def isSatisfied [Field F] [DecidableEq F] (ops : List (Op F)) : Bool :=
