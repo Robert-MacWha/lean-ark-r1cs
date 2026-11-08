@@ -6,8 +6,8 @@ plus the prover's assignment, so the model can be differentially tested
 against arkworks:
 
 * columns as in arkworks: `One ↦ 0`, `Instance i ↦ i`,
-  `Witness j ↦ num_instance_variables + j`; `Zero` terms and zero
-  coefficients are dropped as `make_row` does;
+  `Witness j ↦ num_instance_variables + j`; zero coefficients are dropped as
+  `make_row` does;
 * every row is compacted (duplicate columns merged, sorted by column);
 * `instance:` lists the instance assignment without the leading one.
 -/
@@ -17,30 +17,28 @@ namespace ArkR1CS
 
 variable {F : Type} [Field F]
 
-/-- Column index of a variable in arkworks' matrices (`Zero` has none). -/
-def Variable.column (numInstance : Nat) : Variable → Option Nat
-  | .Zero => none
-  | .One => some 0
-  | .Instance i => some i
-  | .Witness j => some (numInstance + j)
+/-- The column of a variable in `ConstraintSystem::to_matrices`: `One ↦ 0`, `Instance i ↦ i`,
+`Witness j ↦ numInstance + j`. -/
+def Variable.column (numInstance : Nat) : Variable → Nat
+  | .One => 0
+  | .Instance i => i
+  | .Witness j => numInstance + j
 
 /-- Insert into a list sorted by column. -/
 def insertSorted (p : Nat × F) : List (Nat × F) → List (Nat × F)
   | [] => [p]
   | q :: rest => if p.1 ≤ q.1 then p :: q :: rest else q :: insertSorted p rest
 
-/-- Merge a coefficient into an association list. -/
+/-- Add a coefficient into an association list keyed by column. -/
 def mergeTerm [DecidableEq F] (p : Nat × F) : List (Nat × F) → List (Nat × F)
   | [] => [p]
   | q :: rest => if p.1 = q.1 then (q.1, q.2 + p.2) :: rest else q :: mergeTerm p rest
 
-/-- Compact a linear combination the way `make_row` does. -/
+/-- Compact a linear combination like `ConstraintSystem::make_row`: merge duplicate columns, sort
+by column, drop zero coefficients. -/
 def LinearCombination.canon [DecidableEq F] (numInstance : Nat) (lc : LinearCombination F) :
     List (Nat × F) :=
-  let merged := lc.foldl
-    (fun acc t => match t.2.column numInstance with
-      | some col => mergeTerm (col, t.1) acc
-      | none => acc) []
+  let merged := lc.foldl (fun acc t => mergeTerm (t.2.column numInstance, t.1) acc) []
   let sorted := merged.foldl (fun acc p => insertSorted p acc) []
   sorted.filter fun p => decide (p.2 ≠ 0)
 
@@ -51,7 +49,7 @@ def renderLC [DecidableEq F] (showF : F → String) (numInstance : Nat) (lc : Li
   | [] => "-"
   | terms => " ".intercalate (terms.map fun p => s!"{p.1}:{showF p.2}")
 
-/-- Render rows `i: A | B | C`. -/
+/-- Render rows as `i: A | B | C`. -/
 def renderRows [DecidableEq F] (showF : F → String) (numInstance : Nat) :
     Nat → List (Constraint F) → List String
   | _, [] => []
@@ -59,20 +57,17 @@ def renderRows [DecidableEq F] (showF : F → String) (numInstance : Nat) :
     s!"{i}: {renderLC showF numInstance k.a} | {renderLC showF numInstance k.b} | {renderLC showF numInstance k.c}"
       :: renderRows showF numInstance (i + 1) rest
 
-/-- Canonical rendering of the trace of `ops`, run from a fresh constraint
-system. -/
+/-- Render the ops of a gadget run from `ConstraintSystem::new()` in the format of
+`ark_r1cs_trace::render_trace`: counts, instance and witness assignments, then the R1CS matrices
+row by row. -/
 def renderTrace [DecidableEq F] (showF : F → String) (ops : List (Op F)) : String :=
-  let numInputs := Op.inputCount ops
-  let numInstance := numInputs + 1
-  let numWitnesses := Op.witnessCount ops
-  let a := honestAssignment ops
-  let header :=
-    s!"inputs={numInputs} witnesses={numWitnesses} constraints={(Op.constraints ops).length}"
-  let inst := "instance: " ++
-    " ".intercalate ((List.range numInputs).map fun i => showF (a.instance_assignment (i + 1)))
-  let wit := "witness: " ++
-    " ".intercalate ((List.range numWitnesses).map fun j => showF (a.witness_assignment j))
-  "\n".intercalate ([header, inst, wit] ++ renderRows showF numInstance 0 (Op.constraints ops))
-    ++ "\n"
+  let inputs := Op.inputs ops
+  let witnesses := Op.witnesses ops
+  let header := s!"inputs={inputs.length} witnesses={witnesses.length} " ++
+    s!"constraints={(Op.constraints ops).length}"
+  let inst := "instance: " ++ " ".intercalate (inputs.map showF)
+  let wit := "witness: " ++ " ".intercalate (witnesses.map showF)
+  "\n".intercalate
+    ([header, inst, wit] ++ renderRows showF (inputs.length + 1) 0 (Op.constraints ops)) ++ "\n"
 
 end ArkR1CS
