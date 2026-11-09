@@ -677,7 +677,7 @@ joined by `AllocatedFp::add_many`. -/
 def sum (xs : List (FpVar F)) : FpVar F :=
   match xs.filterMap varPart with
   | [] => Constant (xs.map constPart).sum
-  | vs => (Var (AllocatedFp.add_many vs)).add (Constant (xs.map constPart).sum)
+  | vs => Var (AllocatedFp.add_many vs) + Constant (xs.map constPart).sum
 
 @[simp, cs_eval] theorem eval_sum (a : Assignment F) (xs : List (FpVar F)) :
     (sum xs).eval a = (xs.map (·.eval a)).sum := by
@@ -800,7 +800,8 @@ theorem eval_le_bits_terms (a : Assignment F) (power : F) (bits : List (Boolean 
   · simp [eval_le_bits_terms]
 
 private theorem not_isConstant_sub (v : AllocatedFp F) (y : FpVar F) :
-    ¬ (((Var v).sub y).isConstant ∧ (zero : FpVar F).isConstant) := fun ⟨h, _⟩ => by
+    ¬ ((Var v - y).isConstant ∧ (zero : FpVar F).isConstant) := fun ⟨h, _⟩ => by
+  change (sub (Var v) y).isConstant at h
   cases y <;> simp [sub, isConstant] at h
 
 omit [Field F] [DecidableEq F] in
@@ -823,7 +824,7 @@ def to_bits_le_with_top_bits_zero [IntoBigInt F] (x : FpVar F) (size : Nat) :
     | Constant _ => pure (Boolean.new_constant (v.testBit i))
     | Var _ => Boolean.new_witness (v.testBit i)
   let lower_bits_fp := Boolean.le_bits_to_fp lower_bits
-  let rest := x.sub lower_bits_fp
+  let rest := x - lower_bits_fp
   EqGadget.enforce_equal rest zero
   pure (lower_bits, rest)
 
@@ -847,7 +848,7 @@ theorem to_bits_le_with_top_bits_zero_sound [IntoBigInt F] (x : FpVar F) (hx : �
     refine ⟨by simpa using hall.length_eq.symm, ?_, ?_⟩
     · exact forall₂_forall_mem_right hall
     · have := enforce_equal_sound _ zero (not_isConstant_sub v _) _ a heq
-      simp only [eval_sub, eval_zero, sub_eq_zero] at this
+      simp only [eval_hSub, eval_zero, sub_eq_zero] at this
       simpa using this
 
 end FpVar
