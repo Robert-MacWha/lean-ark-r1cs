@@ -187,4 +187,46 @@ theorem new_witness_sound (b : Bool) (k : Counters) (a : Assignment F)
 
 end Boolean
 
+/-! ### Bits as propositions
+
+`IsBit a b P` says the boolean `b` evaluates to 1 when `P` holds and to 0
+otherwise. Restated on bits, `and` is `∧`, `or` is `∨` and `not` is `¬`, so a
+circuit proof can reason in logic instead of field arithmetic. -/
+
+section IsBit
+
+variable [Field F] {a : Assignment F} {k : Counters}
+
+/-- `b` evaluates to the bit of `P`. No arkworks counterpart. -/
+abbrev IsBit (a : Assignment F) (b : Boolean F) (P : Prop) [Decidable P] : Prop :=
+  b.eval a = if P then 1 else 0
+
+/-- The bit of `P` is the bit of any `Q` equivalent to it. -/
+theorem IsBit.congr {b : Boolean F} {P Q : Prop} [Decidable P] [Decidable Q] (hb : IsBit a b P)
+    (h : P ↔ Q) : IsBit a b Q := by
+  rw [IsBit, hb]; exact if_congr h rfl rfl
+
+/-- `FALSE` is the bit of `False`. -/
+theorem IsBit.false : IsBit a (Boolean.FALSE : Boolean F) False := by
+  rw [IsBit, Boolean.eval_FALSE]; simp
+
+/-- `!b` is the bit of `¬ P`. -/
+theorem Boolean.not_bit {b : Boolean F} {P : Prop} [Decidable P] (hb : IsBit a b P) :
+    IsBit a b.not (¬ P) := by
+  rw [IsBit, Boolean.eval_not, hb]; split_ifs <;> simp_all
+
+/-- `x & y` is the bit of `P ∧ Q`. -/
+theorem Boolean.and_bit {x y : Boolean F} {P Q : Prop} [Decidable P] [Decidable Q]
+    (hx : IsBit a x P) (hy : IsBit a y Q) (h : ConstraintsHold a ((x.and y).run k).2) :
+    IsBit a ((x.and y).run k).1 (P ∧ Q) := by
+  rw [IsBit, Boolean.and_sound x y k a h, hx, hy]; split_ifs <;> simp_all
+
+/-- `x | y` is the bit of `P ∨ Q`. -/
+theorem Boolean.or_bit {x y : Boolean F} {P Q : Prop} [Decidable P] [Decidable Q]
+    (hx : IsBit a x P) (hy : IsBit a y Q) (h : ConstraintsHold a ((x.or y).run k).2) :
+    IsBit a ((x.or y).run k).1 (P ∨ Q) := by
+  rw [IsBit, Boolean.or_sound x y k a h, hx, hy]; split_ifs <;> simp_all
+
+end IsBit
+
 end ArkR1CS

@@ -16,5 +16,6 @@ import ArkR1CS.Relations.ConstraintSystem
 import ArkR1CS.R1csStd.Boolean
 import ArkR1CS.R1csStd.Eq
 import ArkR1CS.R1csStd.Fields.Fp
+import ArkR1CS.R1csStd.Fields.ZMod
 import ArkR1CS.CryptoPrimitives.Crh
 import ArkR1CS.Trace

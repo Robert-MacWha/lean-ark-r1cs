@@ -851,6 +851,21 @@ theorem to_bits_le_with_top_bits_zero_sound [IntoBigInt F] (x : FpVar F) (hx : Â
       simp only [eval_hSub, eval_zero, sub_eq_zero] at this
       simpa using this
 
+/-! ### On bits -/
+
+/-- Selecting on the bit of `P` is `if P`. -/
+theorem select_bit {c : Boolean F} {P : Prop} [Decidable P] {t f : FpVar F} {k : Counters}
+    {a : Assignment F} (hc : IsBit a c P)
+    (h : ConstraintsHold a ((conditionally_select c t f).run k).2) :
+    ((conditionally_select c t f).run k).1.eval a = if P then t.eval a else f.eval a := by
+  rw [conditionally_select_sound c t f k a h, hc]; split_ifs <;> ring
+
+/-- `x.is_eq(y)` is the bit of `x = y`. -/
+theorem is_eq_bit (x y : FpVar F) {k : Counters} {a : Assignment F}
+    (h : ConstraintsHold a ((EqGadget.is_eq (F := F) x y).run k).2) :
+    IsBit a ((EqGadget.is_eq (F := F) x y).run k).1 (x.eval a = y.eval a) :=
+  is_eq_sound x y k a h
+
 end FpVar
 
 end ArkR1CS

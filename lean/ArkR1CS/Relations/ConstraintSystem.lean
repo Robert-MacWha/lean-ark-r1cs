@@ -242,8 +242,9 @@ attribute [cs_run] List.append_nil List.nil_append List.singleton_append List.co
 
 Since `CS` is a lawful monad, the loops of a Rust gadget (`try_from_fn`,
 `for` over an iterator with a mutable accumulator) can be written with
-`List.mapM` and `List.foldlM`. The two lemmas below lift a per-iteration
-soundness fact to the whole loop. -/
+`List.mapM` and `List.foldlM`. The lemmas below lift a per-iteration soundness
+fact to the whole loop: `foldlM_inv` by an invariant on the number of steps
+taken, which reads like a `for` loop. -/
 
 namespace CS
 
@@ -289,7 +290,34 @@ theorem foldlM_sound (f : σ → α → CS F σ) (I : σ → Prop) (E : σ → �
     rw [← hE]
     exact foldlM_sound f I E g a hf xs _ _ hI h.2
 
+/-- A loop invariant for `List.foldlM`: if `I 0` holds at the start, and step `i`
+takes `I i` to `I (i + 1)` whenever its rows hold, then `I` holds after the whole
+loop. -/
+theorem foldlM_inv (f : σ → α → CS F σ) (a : Assignment F) :
+    ∀ (xs : List α) (I : Nat → σ → Prop) (s : σ) (k : Counters), I 0 s →
+      (∀ i (hi : i < xs.length) s k, I i s → ConstraintsHold a ((f s xs[i]).run k).2 →
+        I (i + 1) ((f s xs[i]).run k).1) →
+      ConstraintsHold a ((xs.foldlM f s).run k).2 → I xs.length ((xs.foldlM f s).run k).1
+  | [], _, _, _, h0, _, _ => h0
+  | x :: xs, I, s, k, h0, step, h => by
+    simp only [List.foldlM_cons, run_bind, constraintsHold_append] at h ⊢
+    exact foldlM_inv f a xs (fun i => I (i + 1)) _ _ (step 0 (by simp) s k h0 h.1)
+      (fun i hi s k => step (i + 1) (by simp; omega) s k) h.2
+
 end CS
+
+/-- A list whose values are those of `0, …, n - 1` has length `n`. -/
+theorem length_of_map_eq_range {α β : Type} {l : List α} {g : α → β} {f : Nat → β} {n : Nat}
+    (h : l.map g = (List.range n).map f) : l.length = n := by
+  simpa using congrArg List.length h
+
+/-- Entry `i` of a list whose values are those of `0, …, n - 1` has the value of `i`. -/
+theorem getElem_of_map_eq_range {α β : Type} {l : List α} {g : α → β} {f : Nat → β} {n : Nat}
+    (h : l.map g = (List.range n).map f) (i : Nat) (hi : i < l.length) : g l[i] = f i := by
+  have := congrArg (·[i]?) h
+  simp only [List.getElem?_map, List.getElem?_eq_getElem hi, List.getElem?_range
+    (length_of_map_eq_range h ▸ hi), Option.map_some, Option.some.injEq] at this
+  exact this
 
 /-! ### The honest assignment (executable checks only) -/
 
