@@ -1,5 +1,7 @@
 # lean-ark-r1cs
 
+[AI:X](https://0rwx.com/)
+
 A Lean 4 model of arkworks R1CS gadgets, with soundness proofs, for formally verifying arkworks circuits.
 
 This package re-implements the [ark-r1cs-std](https://github.com/arkworks-rs/r1cs-std) gadgets in Lean, following the Rust method by method and keeping the Rust names. Provides basic gadgets for proving the soundness of a circuit. Does not provide completeness.
